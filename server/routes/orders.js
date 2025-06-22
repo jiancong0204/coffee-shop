@@ -1,0 +1,443 @@
+const express = require('express');
+const db = require('../database');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const productRoutes = require('./products');
+
+const router = express.Router();
+
+// 创建订单（结账）
+router.post('/checkout', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  // 生成取单号（6位数字）
+  const generatePickupNumber = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  };
+
+  // 获取购物车商品
+  const cartSql = `
+    SELECT 
+      c.product_id,
+      c.quantity,
+      p.price,
+      p.name,
+      p.available
+    FROM cart c
+    JOIN products p ON c.product_id = p.id
+    WHERE c.user_id = ?
+  `;
+
+  db.all(cartSql, [userId], (err, cartItems) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: '服务器错误' });
+    }
+
+    if (cartItems.length === 0) {
+      return res.status(400).json({ error: '购物车为空' });
+    }
+
+    // 检查所有商品是否可用
+    const unavailableItems = cartItems.filter(item => !item.available);
+    if (unavailableItems.length > 0) {
+      return res.status(400).json({ error: '购物车中有商品不可用，请刷新购物车' });
+    }
+
+    // 检查库存并预减库存
+    const checkAndReserveStock = async () => {
+      const stockChecks = [];
+      const stockReservations = [];
+      
+      for (const item of cartItems) {
+        try {
+          // 检查库存
+          const stockResult = await new Promise((resolve, reject) => {
+            productRoutes.decreaseStock(item.product_id, item.quantity, (err, result) => {
+              if (err) reject(err);
+              else resolve(result);
+            });
+          });
+          
+          stockChecks.push({ productId: item.product_id, quantity: item.quantity, result: stockResult });
+          if (!stockResult.unlimited) {
+            stockReservations.push({ productId: item.product_id, quantity: item.quantity });
+          }
+        } catch (error) {
+          // 如果库存检查失败，恢复已减少的库存
+          for (const reservation of stockReservations) {
+            productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+          }
+          return res.status(400).json({ error: `商品 ${item.name} ${error.message}` });
+        }
+      }
+      
+      // 计算总金额
+      const totalAmount = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      // 生成唯一取单号
+      const createOrderWithPickupNumber = (retryCount = 0) => {
+        if (retryCount > 10) {
+          // 恢复库存
+          for (const reservation of stockReservations) {
+            productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+          }
+          return res.status(500).json({ error: '生成取单号失败，请重试' });
+        }
+
+        const pickupNumber = generatePickupNumber();
+
+        // 开始事务
+        db.serialize(() => {
+          db.run('BEGIN TRANSACTION');
+
+          // 创建订单
+          db.run(
+            'INSERT INTO orders (user_id, pickup_number, total_amount, status) VALUES (?, ?, ?, ?)',
+            [userId, pickupNumber, totalAmount, 'pending'],
+            function(err) {
+              if (err) {
+                if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+                  // 取单号重复，重新生成
+                  db.run('ROLLBACK');
+                  return createOrderWithPickupNumber(retryCount + 1);
+                }
+                console.error('Database error:', err);
+                db.run('ROLLBACK');
+                // 恢复库存
+                for (const reservation of stockReservations) {
+                  productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+                }
+                return res.status(500).json({ error: '创建订单失败' });
+              }
+
+              const orderId = this.lastID;
+
+              // 添加订单详情
+              let itemsAdded = 0;
+              let hasError = false;
+
+              cartItems.forEach(item => {
+                if (hasError) return;
+
+                db.run(
+                  'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)',
+                  [orderId, item.product_id, item.quantity, item.price],
+                  function(err) {
+                    if (err) {
+                      console.error('Database error:', err);
+                      hasError = true;
+                      db.run('ROLLBACK');
+                      // 恢复库存
+                      for (const reservation of stockReservations) {
+                        productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+                      }
+                      return res.status(500).json({ error: '创建订单详情失败' });
+                    }
+
+                    itemsAdded++;
+                    
+                    if (itemsAdded === cartItems.length) {
+                      // 清空购物车
+                      db.run('DELETE FROM cart WHERE user_id = ?', [userId], (err) => {
+                        if (err) {
+                          console.error('Database error:', err);
+                          db.run('ROLLBACK');
+                          // 恢复库存
+                          for (const reservation of stockReservations) {
+                            productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+                          }
+                          return res.status(500).json({ error: '清空购物车失败' });
+                        }
+
+                        db.run('COMMIT');
+                        console.log(`订单 ${orderId} 创建成功，已减少相关商品库存`);
+                        res.status(201).json({
+                          message: '订单创建成功',
+                          order: {
+                            id: orderId,
+                            pickup_number: pickupNumber,
+                            total_amount: totalAmount,
+                            status: 'pending',
+                            items: cartItems
+                          }
+                        });
+                      });
+                    }
+                  }
+                );
+              });
+            }
+          );
+        });
+      };
+
+      createOrderWithPickupNumber();
+    };
+
+    checkAndReserveStock();
+  });
+});
+
+// 获取用户订单
+router.get('/my-orders', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+
+  const sql = `
+    SELECT 
+      o.id,
+      o.pickup_number,
+      o.total_amount,
+      o.status,
+      o.created_at,
+      COUNT(oi.id) as item_count
+    FROM orders o
+    LEFT JOIN order_items oi ON o.id = oi.order_id
+    WHERE o.user_id = ?
+    GROUP BY o.id
+    ORDER BY o.created_at DESC
+  `;
+
+  db.all(sql, [userId], (err, orders) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: '服务器错误' });
+    }
+
+    res.json(orders);
+  });
+});
+
+// 获取订单详情
+router.get('/:order_id', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { order_id } = req.params;
+
+  // 获取订单基本信息
+  db.get(
+    'SELECT * FROM orders WHERE id = ? AND user_id = ?',
+    [order_id, userId],
+    (err, order) => {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: '服务器错误' });
+      }
+
+      if (!order) {
+        return res.status(404).json({ error: '订单不存在' });
+      }
+
+      // 获取订单详情
+      const itemsSql = `
+        SELECT 
+          oi.quantity,
+          oi.price,
+          p.name,
+          p.description,
+          p.image_url,
+          p.category
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.id
+        WHERE oi.order_id = ?
+      `;
+
+      db.all(itemsSql, [order_id], (err, items) => {
+        if (err) {
+          console.error('Database error:', err);
+          return res.status(500).json({ error: '服务器错误' });
+        }
+
+        res.json({
+          ...order,
+          items: items
+        });
+      });
+    }
+  );
+});
+
+// 获取所有订单（仅管理员）
+router.get('/', authenticateToken, requireAdmin, (req, res) => {
+  const { status, page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+
+  let sql = `
+    SELECT 
+      o.id,
+      o.user_id,
+      u.username,
+      o.pickup_number,
+      o.total_amount,
+      o.status,
+      o.created_at,
+      COUNT(oi.id) as item_count
+    FROM orders o
+    JOIN users u ON o.user_id = u.id
+    LEFT JOIN order_items oi ON o.id = oi.order_id
+  `;
+
+  const params = [];
+
+  if (status) {
+    sql += ' WHERE o.status = ?';
+    params.push(status);
+  }
+
+  sql += ' GROUP BY o.id ORDER BY o.created_at DESC LIMIT ? OFFSET ?';
+  params.push(parseInt(limit), parseInt(offset));
+
+  db.all(sql, params, (err, orders) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: '服务器错误' });
+    }
+
+    res.json(orders);
+  });
+});
+
+// 获取订单详情（管理员）
+router.get('/admin/:order_id', authenticateToken, requireAdmin, (req, res) => {
+  const { order_id } = req.params;
+
+  // 获取订单基本信息
+  db.get(
+    `SELECT 
+      o.id,
+      o.user_id,
+      u.username,
+      o.pickup_number,
+      o.total_amount,
+      o.status,
+      o.created_at
+    FROM orders o
+    JOIN users u ON o.user_id = u.id
+    WHERE o.id = ?`,
+    [order_id],
+    (err, order) => {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: '服务器错误' });
+      }
+
+      if (!order) {
+        return res.status(404).json({ error: '订单不存在' });
+      }
+
+      // 获取订单详情
+      const itemsSql = `
+        SELECT 
+          oi.quantity,
+          oi.price,
+          p.name,
+          p.description,
+          p.image_url,
+          p.category
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.id
+        WHERE oi.order_id = ?
+      `;
+
+      db.all(itemsSql, [order_id], (err, items) => {
+        if (err) {
+          console.error('Database error:', err);
+          return res.status(500).json({ error: '服务器错误' });
+        }
+
+        res.json({
+          ...order,
+          items: items
+        });
+      });
+    }
+  );
+});
+
+// 更新订单状态（仅管理员）
+router.put('/:order_id/status', authenticateToken, requireAdmin, (req, res) => {
+  const { order_id } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ['pending', 'preparing', 'ready', 'completed', 'cancelled'];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: '无效的订单状态' });
+  }
+
+  // 先获取当前订单状态和订单详情
+  db.get('SELECT status FROM orders WHERE id = ?', [order_id], (err, currentOrder) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: '服务器错误' });
+    }
+
+    if (!currentOrder) {
+      return res.status(404).json({ error: '订单不存在' });
+    }
+
+    // 如果要取消订单，需要恢复库存
+    if (status === 'cancelled' && currentOrder.status !== 'cancelled') {
+      // 获取订单商品详情
+      db.all(
+        'SELECT product_id, quantity FROM order_items WHERE order_id = ?',
+        [order_id],
+        (err, orderItems) => {
+          if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: '服务器错误' });
+          }
+
+          // 恢复库存
+          let itemsProcessed = 0;
+          let hasError = false;
+
+          if (orderItems.length === 0) {
+            // 如果没有商品，直接更新状态
+            updateOrderStatus();
+            return;
+          }
+
+          orderItems.forEach(item => {
+            if (hasError) return;
+
+            productRoutes.increaseStock(item.product_id, item.quantity, (err, result) => {
+              if (err) {
+                console.error('Error restoring stock:', err);
+                hasError = true;
+                return res.status(500).json({ error: '恢复库存失败' });
+              }
+
+              itemsProcessed++;
+              if (itemsProcessed === orderItems.length) {
+                console.log(`订单 ${order_id} 取消，已恢复相关商品库存`);
+                updateOrderStatus();
+              }
+            });
+          });
+        }
+      );
+    } else {
+      // 其他状态变更直接更新
+      updateOrderStatus();
+    }
+
+    function updateOrderStatus() {
+      db.run(
+        'UPDATE orders SET status = ? WHERE id = ?',
+        [status, order_id],
+        function(err) {
+          if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: '服务器错误' });
+          }
+
+          if (this.changes === 0) {
+            return res.status(404).json({ error: '订单不存在' });
+          }
+
+          res.json({ message: '订单状态已更新' });
+        }
+      );
+    }
+  });
+});
+
+module.exports = router; 
