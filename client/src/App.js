@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import AdminPage from './pages/AdminPage';
 import CartPage from './pages/CartPage';
 import OrdersPage from './pages/OrdersPage';
+import AccountPage from './pages/AccountPage';
 import { useAuth } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
 
@@ -38,6 +39,7 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/cart" element={<CartPage />} />
+              <Route path="/account" element={<AccountPage />} />
               <Route path="/orders" element={<OrdersPage />} />
             </Routes>
           </div>

@@ -53,7 +53,8 @@ router.post('/login', [
           user: {
             id: user.id,
             username: user.username,
-            role: user.role
+            role: user.role,
+            created_at: user.created_at
           }
         });
       });
@@ -70,7 +71,8 @@ router.post('/login', [
         user: {
           id: user.id,
           username: user.username,
-          role: user.role
+          role: user.role,
+          created_at: user.created_at
         }
       });
     }
@@ -109,7 +111,8 @@ router.post('/guest-login', [
           user: {
             id: existingUser.id,
             username: existingUser.username,
-            role: existingUser.role
+            role: existingUser.role,
+            created_at: existingUser.created_at
           }
         });
       } else {
@@ -133,13 +136,22 @@ router.post('/guest-login', [
           { expiresIn: '24h' }
         );
 
-        res.status(201).json({
-          token,
-          user: {
-            id: this.lastID,
-            username: username,
-            role: 'customer'
+        // 获取刚创建的用户信息（包含created_at）
+        db.get('SELECT * FROM users WHERE id = ?', [this.lastID], (err, newUser) => {
+          if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: '服务器错误' });
           }
+
+          res.status(201).json({
+            token,
+            user: {
+              id: newUser.id,
+              username: newUser.username,
+              role: newUser.role,
+              created_at: newUser.created_at
+            }
+          });
         });
       }
     );

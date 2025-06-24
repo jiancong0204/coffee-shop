@@ -277,17 +277,77 @@ router.get('/:order_id', authenticateToken, (req, res) => {
         WHERE oi.order_id = ?
       `;
 
-      db.all(itemsSql, [order_id], (err, items) => {
+      db.all(itemsSql, [order_id], async (err, items) => {
         if (err) {
           console.error('Database error:', err);
           return res.status(500).json({ error: '服务器错误' });
         }
 
-        // 解析 variant_selections JSON 字段
-        const processedItems = items.map(item => ({
-          ...item,
-          variant_selections: item.variant_selections ? JSON.parse(item.variant_selections) : null
-        }));
+        // 处理商品项目，包括细分选项的显示名称
+        const processedItems = [];
+        
+        for (const item of items) {
+          let processedItem = { ...item };
+          
+          // 解析和格式化 variant_selections
+          if (item.variant_selections) {
+            try {
+              const selections = JSON.parse(item.variant_selections);
+              const variantDisplays = [];
+              
+              for (const [typeId, selectionData] of Object.entries(selections)) {
+                // 检查数据格式：如果是新格式（包含完整信息），直接使用
+                if (typeof selectionData === 'object' && selectionData.type_display_name) {
+                  variantDisplays.push({
+                    type_display_name: selectionData.type_display_name,
+                    option_display_name: selectionData.option_display_name,
+                    price_adjustment: selectionData.price_adjustment || 0
+                  });
+                } else {
+                  // 如果是老格式（只有optionId），查询数据库获取详细信息
+                  const optionId = selectionData;
+                  const optionSql = `
+                    SELECT 
+                      vt.display_name as type_display_name,
+                      vo.display_name as option_display_name,
+                      vo.price_adjustment
+                    FROM product_variant_options vo
+                    LEFT JOIN product_variant_types vt ON vo.variant_type_id = vt.id
+                    WHERE vo.id = ?
+                  `;
+                  
+                  try {
+                    const optionInfo = await new Promise((resolve, reject) => {
+                      db.get(optionSql, [optionId], (err, result) => {
+                        if (err) reject(err);
+                        else resolve(result);
+                      });
+                    });
+                    
+                    if (optionInfo) {
+                      variantDisplays.push({
+                        type_display_name: optionInfo.type_display_name,
+                        option_display_name: optionInfo.option_display_name,
+                        price_adjustment: optionInfo.price_adjustment
+                      });
+                    }
+                  } catch (error) {
+                    console.error('查询细分选项失败:', error);
+                  }
+                }
+              }
+              
+              processedItem.variant_selections = variantDisplays;
+            } catch (e) {
+              console.error('解析细分选项失败:', e);
+              processedItem.variant_selections = [];
+            }
+          } else {
+            processedItem.variant_selections = [];
+          }
+          
+          processedItems.push(processedItem);
+        }
 
         res.json({
           ...order,
@@ -465,17 +525,77 @@ router.get('/admin/:order_id', authenticateToken, requireAdmin, (req, res) => {
         WHERE oi.order_id = ?
       `;
 
-      db.all(itemsSql, [order_id], (err, items) => {
+      db.all(itemsSql, [order_id], async (err, items) => {
         if (err) {
           console.error('Database error:', err);
           return res.status(500).json({ error: '服务器错误' });
         }
 
-        // 解析 variant_selections JSON 字段
-        const processedItems = items.map(item => ({
-          ...item,
-          variant_selections: item.variant_selections ? JSON.parse(item.variant_selections) : null
-        }));
+        // 处理商品项目，包括细分选项的显示名称
+        const processedItems = [];
+        
+        for (const item of items) {
+          let processedItem = { ...item };
+          
+          // 解析和格式化 variant_selections
+          if (item.variant_selections) {
+            try {
+              const selections = JSON.parse(item.variant_selections);
+              const variantDisplays = [];
+              
+              for (const [typeId, selectionData] of Object.entries(selections)) {
+                // 检查数据格式：如果是新格式（包含完整信息），直接使用
+                if (typeof selectionData === 'object' && selectionData.type_display_name) {
+                  variantDisplays.push({
+                    type_display_name: selectionData.type_display_name,
+                    option_display_name: selectionData.option_display_name,
+                    price_adjustment: selectionData.price_adjustment || 0
+                  });
+                } else {
+                  // 如果是老格式（只有optionId），查询数据库获取详细信息
+                  const optionId = selectionData;
+                  const optionSql = `
+                    SELECT 
+                      vt.display_name as type_display_name,
+                      vo.display_name as option_display_name,
+                      vo.price_adjustment
+                    FROM product_variant_options vo
+                    LEFT JOIN product_variant_types vt ON vo.variant_type_id = vt.id
+                    WHERE vo.id = ?
+                  `;
+                  
+                  try {
+                    const optionInfo = await new Promise((resolve, reject) => {
+                      db.get(optionSql, [optionId], (err, result) => {
+                        if (err) reject(err);
+                        else resolve(result);
+                      });
+                    });
+                    
+                    if (optionInfo) {
+                      variantDisplays.push({
+                        type_display_name: optionInfo.type_display_name,
+                        option_display_name: optionInfo.option_display_name,
+                        price_adjustment: optionInfo.price_adjustment
+                      });
+                    }
+                  } catch (error) {
+                    console.error('查询细分选项失败:', error);
+                  }
+                }
+              }
+              
+              processedItem.variant_selections = variantDisplays;
+            } catch (e) {
+              console.error('解析细分选项失败:', e);
+              processedItem.variant_selections = null;
+            }
+          } else {
+            processedItem.variant_selections = null;
+          }
+          
+          processedItems.push(processedItem);
+        }
 
         res.json({
           ...order,

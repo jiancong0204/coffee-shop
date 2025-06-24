@@ -28,6 +28,12 @@ const Header = () => {
 
   const userMenuItems = [
     {
+      key: 'account',
+      label: '我的账户',
+      icon: <UserOutlined />,
+      onClick: () => navigate('/account')
+    },
+    {
       key: 'orders',
       label: '我的订单',
       icon: <HistoryOutlined />,
@@ -59,7 +65,7 @@ const Header = () => {
   return (
     <AntHeader style={{ 
       background: '#fff', 
-      padding: '0 16px',
+      padding: '0 12px',
       boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
       display: 'flex',
       justifyContent: 'space-between',
@@ -74,7 +80,13 @@ const Header = () => {
         ☕ 1403
       </div>
 
-      <Space size="large">
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: '12px',
+        minWidth: 0, // 允许收缩
+        flexShrink: 1 // 允许收缩
+      }}>
         {isLoggedIn() ? (
           <>
             <Button 
@@ -102,12 +114,28 @@ const Header = () => {
             <Dropdown
               menu={{ items: isAdmin() ? adminMenuItems : userMenuItems }}
               placement="bottomRight"
+              trigger={['click']}
             >
-              <Space style={{ cursor: 'pointer' }}>
+              <div style={{ 
+                cursor: 'pointer', 
+                display: 'flex',
+                alignItems: 'center',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                transition: 'background-color 0.2s'
+              }}>
                 <Avatar icon={<UserOutlined />} size="small" />
-                <span>{user?.username}</span>
-                {isAdmin() && <span style={{ color: '#1890ff' }}>(管理员)</span>}
-              </Space>
+                {isAdmin() && (
+                  <span style={{ 
+                    color: '#1890ff', 
+                    fontSize: '12px',
+                    marginLeft: '6px',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    管理员
+                  </span>
+                )}
+              </div>
             </Dropdown>
           </>
         ) : (
@@ -118,7 +146,7 @@ const Header = () => {
             登录
           </Button>
         )}
-      </Space>
+      </div>
     </AntHeader>
   );
 };

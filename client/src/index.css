@@ -130,6 +130,11 @@ code {
     margin-right: 8px !important;
   }
   
+  /* Header右侧优化 */
+  .ant-layout-header .ant-dropdown-trigger > div:hover {
+    background-color: #f0f0f0 !important;
+  }
+  
   /* 产品卡片移动端样式 */
   .coffee-card {
     margin-bottom: 16px !important;
@@ -185,6 +190,8 @@ code {
   .ant-layout-header {
     padding: 0 8px !important;
   }
+  
+
   
   .coffee-card .ant-card-body {
     padding: 8px !important;

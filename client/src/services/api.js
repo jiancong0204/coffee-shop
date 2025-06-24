@@ -259,6 +259,14 @@ class ApiService {
     return this.get('/users/history/orders', params);
   }
 
+  deleteCustomer(userId) {
+    return this.delete(`/users/${userId}`);
+  }
+
+  updateCustomerUsername(userId, username) {
+    return this.put(`/users/${userId}/username`, { username });
+  }
+
   // 标签管理相关API
   getAllTags() {
     return this.get('/tags');
@@ -278,6 +286,15 @@ class ApiService {
 
   setProductTags(productId, tagIds) {
     return this.put(`/tags/product/${productId}`, { tagIds });
+  }
+
+  // 用户个人资料相关API
+  getUserStats() {
+    return this.get('/users/profile/stats');
+  }
+
+  updateMyUsername(username) {
+    return this.put('/users/profile/username', { username });
   }
 }
 

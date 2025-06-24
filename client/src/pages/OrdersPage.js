@@ -111,6 +111,30 @@ const OrdersPage = () => {
                     <Text type="secondary">下单时间: {formatDate(order.created_at)}</Text>
                   </div>
                   
+                  {/* 商品详情显示 */}
+                  {order.items && order.items.length > 0 && (
+                    <div style={{ marginBottom: 12, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
+                      <Text strong style={{ fontSize: '13px', color: '#666' }}>商品详情：</Text>
+                      <div style={{ marginTop: 8 }}>
+                        {order.items.map((item, index) => (
+                          <div key={index} style={{ marginBottom: index < order.items.length - 1 ? 8 : 0 }}>
+                            <Text strong style={{ fontSize: '12px' }}>{item.name}</Text>
+                            <Text type="secondary" style={{ fontSize: '12px' }}> x{item.quantity}</Text>
+                            {item.variant_selections && item.variant_selections.length > 0 && (
+                              <div style={{ marginTop: 4 }}>
+                                {item.variant_selections.map((selection, selIndex) => (
+                                  <Tag key={selIndex} size="small" color="blue" style={{ margin: '0 4px 2px 0', fontSize: '10px' }}>
+                                    {selection.type_display_name}: {selection.option_display_name}
+                                  </Tag>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Text type="secondary">共 {order.item_count} 件商品</Text>
                     <Space>

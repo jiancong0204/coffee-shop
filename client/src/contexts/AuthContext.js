@@ -86,6 +86,11 @@ export const AuthProvider = ({ children }) => {
     return !!user;
   };
 
+  const updateUser = (userData) => {
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
   const value = {
     user,
     token,
@@ -94,7 +99,8 @@ export const AuthProvider = ({ children }) => {
     guestLogin,
     logout,
     isAdmin,
-    isLoggedIn
+    isLoggedIn,
+    updateUser
   };
 
   return (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, Card, Table, Button, Modal, Form, Input, InputNumber, Select, message, Space, Popconfirm, Typography, Tabs, Tag, Badge, Upload, Image, Checkbox } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined, ShoppingOutlined, CheckOutlined, ClockCircleOutlined, EyeOutlined, UserOutlined, LockOutlined, UploadOutlined, InboxOutlined, HistoryOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined, ShoppingOutlined, CheckOutlined, ClockCircleOutlined, EyeOutlined, UserOutlined, LockOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -33,8 +33,7 @@ const AdminPage = () => {
   const [uploadedImages, setUploadedImages] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [customerLoading, setCustomerLoading] = useState(false);
-  const [historyOrders, setHistoryOrders] = useState([]);
-  const [historyOrderLoading, setHistoryOrderLoading] = useState(false);
+
   
   // 细分类型管理相关状态
   const [variantTypes, setVariantTypes] = useState([]);
@@ -59,16 +58,7 @@ const AdminPage = () => {
   const [editVariantConfigModalVisible, setEditVariantConfigModalVisible] = useState(false); // 编辑细分配置模态框
   const [editingVariantConfig, setEditingVariantConfig] = useState(null); // 当前编辑的细分配置
   const [variantConfigForm] = Form.useForm(); // 细分配置表单
-  const [historyOrderPagination, setHistoryOrderPagination] = useState({
-    current: 1,
-    pageSize: 20,
-    total: 0
-  });
-  const [historyOrderFilters, setHistoryOrderFilters] = useState({
-    status: 'all',
-    startDate: '',
-    endDate: ''
-  });
+
   const [customerDetailVisible, setCustomerDetailVisible] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [statusModalVisible, setStatusModalVisible] = useState(false);
@@ -77,11 +67,22 @@ const AdminPage = () => {
   const [productSortType, setProductSortType] = useState('id-asc'); // 商品排序类型，默认ID升序
   const [orderFilters, setOrderFilters] = useState({
     pickupNumber: '',
-    customerName: ''
+    customerName: '',
+    status: 'all',
+    startDate: '',
+    endDate: ''
   }); // 订单筛选条件
+  const [orderPagination, setOrderPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0
+  }); // 订单分页
   const [allTags, setAllTags] = useState([]); // 所有可用标签
   const [tagModalVisible, setTagModalVisible] = useState(false); // 标签管理模态框
   const [tagForm] = Form.useForm(); // 标签表单
+  const [editUsernameModalVisible, setEditUsernameModalVisible] = useState(false); // 编辑用户名模态框
+  const [editingCustomer, setEditingCustomer] = useState(null); // 当前编辑的顾客
+  const [usernameForm] = Form.useForm(); // 用户名编辑表单
 
   useEffect(() => {
     if (!isLoggedIn() || !isAdmin()) {
@@ -96,8 +97,6 @@ const AdminPage = () => {
     // 根据当前标签页加载对应数据
     if (activeTab === 'customers') {
       fetchCustomers();
-    } else if (activeTab === 'history') {
-      fetchHistoryOrders();
     }
   }, [isLoggedIn, isAdmin, navigate]);
 
@@ -105,8 +104,6 @@ const AdminPage = () => {
   useEffect(() => {
     if (activeTab === 'customers' && (!customers || customers.length === 0)) {
       fetchCustomers();
-    } else if (activeTab === 'history' && (!historyOrders || historyOrders.length === 0)) {
-      fetchHistoryOrders();
     } else if (activeTab === 'variants' && (!variantTypes || variantTypes.length === 0)) {
       fetchVariantTypes();
     }
@@ -271,7 +268,9 @@ const AdminPage = () => {
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString('zh-CN');
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? '-' : date.toLocaleString('zh-CN');
   };
 
   const productColumns = [
@@ -599,7 +598,9 @@ const AdminPage = () => {
     setCustomerLoading(true);
     try {
       const response = await api.getAllCustomers();
-      setCustomers(response.data || []);
+      // 确保返回的是数组数据
+      const customersData = response.data?.data || response.data || [];
+      setCustomers(Array.isArray(customersData) ? customersData : []);
     } catch (error) {
       message.error('获取客户列表失败');
       setCustomers([]);
@@ -608,65 +609,96 @@ const AdminPage = () => {
     }
   };
 
-  // 获取历史订单
-  const fetchHistoryOrders = async (page = 1, filters = historyOrderFilters) => {
-    setHistoryOrderLoading(true);
-    try {
-      const params = {
-        page,
-        limit: historyOrderPagination.pageSize,
-        ...filters,
-        status: filters.status === 'all' ? undefined : filters.status
-      };
-      
-      const response = await api.getAllHistoryOrders(params);
-      const orders = response.data?.data?.orders || [];
-      
-      setHistoryOrders(orders);
-      setHistoryOrderPagination({
-        ...historyOrderPagination,
-        current: page,
-        total: response.data?.data?.pagination?.total || 0
-      });
-    } catch (error) {
-      message.error('获取历史订单失败');
-      setHistoryOrders([]); // 确保在错误时也设置为空数组
-      setHistoryOrderPagination({
-        ...historyOrderPagination,
-        current: 1,
-        total: 0
-      });
-    } finally {
-      setHistoryOrderLoading(false);
-    }
-  };
+
 
   // 显示客户详情
   const showCustomerDetail = async (customer) => {
     try {
       const response = await api.getCustomerDetail(customer.id);
-      setSelectedCustomer(response.data);
+      
+      // 根据后端API返回的数据结构，应该是 { success: true, data: { user: {...}, orders: [...] } }
+      // 所以 response.data 应该包含 { success: true, data: {...} }
+      // 我们需要的实际数据在 response.data.data 中
+      const customerData = response.data?.data || response.data;
+      
+      setSelectedCustomer(customerData);
       setCustomerDetailVisible(true);
     } catch (error) {
+      console.error('获取客户详情失败:', error);
       message.error('获取客户详情失败');
     }
   };
 
-  // 处理历史订单筛选
-  const handleHistoryOrderFilter = (filters) => {
-    setHistoryOrderFilters(filters);
-    fetchHistoryOrders(1, filters);
+  // 删除顾客账号
+  const handleDeleteCustomer = (customer) => {
+    Modal.confirm({
+      title: '确认删除顾客账号',
+      content: (
+        <div>
+          <p>确定要删除顾客 <strong>{customer.username}</strong> 的账号吗？</p>
+          <p style={{ color: '#ff4d4f', fontSize: '12px' }}>
+            ⚠️ 此操作将同时删除该用户的所有订单和购物车数据，且无法恢复！
+          </p>
+          <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+            用户信息：
+            <br />• 用户ID: {customer.id}
+            <br />• 注册时间: {formatDate(customer.created_at)}
+            <br />• 已完成订单数量: {customer.total_orders} 个
+            <br />• 消费总额: ¥{customer.total_spent || 0}
+          </div>
+        </div>
+      ),
+      okText: '确认删除',
+      cancelText: '取消',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await api.deleteCustomer(customer.id);
+          message.success(`顾客 ${customer.username} 已删除`);
+          fetchCustomers(); // 刷新顾客列表
+        } catch (error) {
+          message.error(error.response?.data?.error || '删除失败');
+        }
+      },
+    });
   };
 
-  // 处理历史订单分页
-  const handleHistoryOrderPagination = (page, pageSize) => {
-    setHistoryOrderPagination({
-      ...historyOrderPagination,
-      current: page,
-      pageSize
+  // 显示编辑用户名模态框
+  const showEditUsernameModal = (customer) => {
+    setEditingCustomer(customer);
+    setEditUsernameModalVisible(true);
+    usernameForm.setFieldsValue({
+      username: customer.username
     });
-    fetchHistoryOrders(page, historyOrderFilters);
   };
+
+  // 处理用户名编辑提交
+  const handleUsernameSubmit = async (values) => {
+    if (!editingCustomer || !editingCustomer.id) {
+      message.error('编辑的顾客信息有误');
+      return;
+    }
+    
+    try {
+      const response = await api.updateCustomerUsername(editingCustomer.id, values.username);
+      message.success(response.data.message || '用户名修改成功');
+      setEditUsernameModalVisible(false);
+      usernameForm.resetFields();
+      setEditingCustomer(null);
+      fetchCustomers(); // 刷新顾客列表
+    } catch (error) {
+      message.error(error.response?.data?.error || '修改失败');
+    }
+  };
+
+  // 取消编辑用户名
+  const cancelEditUsername = () => {
+    setEditUsernameModalVisible(false);
+    usernameForm.resetFields();
+    setEditingCustomer(null);
+  };
+
+
 
   // 显示状态修改模态框
   const showStatusModal = (order) => {
@@ -677,6 +709,11 @@ const AdminPage = () => {
 
   // 处理状态修改提交
   const handleStatusSubmit = async (values) => {
+    if (!selectedOrderForStatus || !selectedOrderForStatus.id) {
+      message.error('选择的订单信息有误');
+      return;
+    }
+    
     try {
       if (values.status === selectedOrderForStatus.status) {
         message.warning('状态未发生变化');
@@ -746,6 +783,28 @@ const AdminPage = () => {
       );
     }
     
+    // 按状态筛选
+    if (orderFilters.status && orderFilters.status !== 'all') {
+      filteredOrders = filteredOrders.filter(order => order.status === orderFilters.status);
+    }
+    
+    // 按日期筛选
+    if (orderFilters.startDate) {
+      const startDate = new Date(orderFilters.startDate);
+      filteredOrders = filteredOrders.filter(order => {
+        const orderDate = new Date(order.created_at);
+        return orderDate >= startDate;
+      });
+    }
+    
+    if (orderFilters.endDate) {
+      const endDate = new Date(orderFilters.endDate + ' 23:59:59'); // 包含整天
+      filteredOrders = filteredOrders.filter(order => {
+        const orderDate = new Date(order.created_at);
+        return orderDate <= endDate;
+      });
+    }
+    
     return filteredOrders;
   };
 
@@ -761,7 +820,10 @@ const AdminPage = () => {
   const resetOrderFilters = () => {
     setOrderFilters({
       pickupNumber: '',
-      customerName: ''
+      customerName: '',
+      status: 'all',
+      startDate: '',
+      endDate: ''
     });
   };
 
@@ -1233,6 +1295,30 @@ const AdminPage = () => {
                               onChange={(e) => handleOrderFilter('customerName', e.target.value)}
                               style={{ width: 150 }}
                               allowClear
+                            />
+                            <Select
+                              value={orderFilters.status}
+                              style={{ width: 120 }}
+                              onChange={(value) => handleOrderFilter('status', value)}
+                            >
+                              <Select.Option value="all">全部状态</Select.Option>
+                              <Select.Option value="pending">待接单</Select.Option>
+                              <Select.Option value="preparing">制作中</Select.Option>
+                              <Select.Option value="ready">待取餐</Select.Option>
+                              <Select.Option value="completed">已完成</Select.Option>
+                              <Select.Option value="cancelled">已取消</Select.Option>
+                            </Select>
+                            <Input
+                              placeholder="开始日期 (YYYY-MM-DD)"
+                              value={orderFilters.startDate}
+                              onChange={(e) => handleOrderFilter('startDate', e.target.value)}
+                              style={{ width: 180 }}
+                            />
+                            <Input
+                              placeholder="结束日期 (YYYY-MM-DD)"
+                              value={orderFilters.endDate}
+                              onChange={(e) => handleOrderFilter('endDate', e.target.value)}
+                              style={{ width: 180 }}
                             />
                             <Button onClick={resetOrderFilters}>
                               重置筛选
@@ -1783,141 +1869,121 @@ const AdminPage = () => {
                   )
                 },
                 {
-                  key: 'history',
+                  key: 'customers',
                   label: (
                     <span>
-                      <HistoryOutlined style={{ marginRight: 8 }} />
-                      历史订单
+                      <UserOutlined style={{ marginRight: 8 }} />
+                      顾客管理
                     </span>
                   ),
                   children: (
                     <div>
-                      <div style={{ marginBottom: 16 }}>
-                        <Space wrap>
-                          <Button
-                            type="primary"
-                            onClick={() => fetchHistoryOrders()}
-                          >
-                            刷新订单
-                          </Button>
-                          
-                          <Select
-                            value={historyOrderFilters.status}
-                            style={{ width: 120 }}
-                            onChange={(value) => handleHistoryOrderFilter({ ...historyOrderFilters, status: value })}
-                          >
-                            <Select.Option value="all">全部状态</Select.Option>
-                            <Select.Option value="pending">待接单</Select.Option>
-                            <Select.Option value="preparing">制作中</Select.Option>
-                            <Select.Option value="ready">待取餐</Select.Option>
-                            <Select.Option value="completed">已完成</Select.Option>
-                            <Select.Option value="cancelled">已取消</Select.Option>
-                          </Select>
-                          
-                          <Input
-                            placeholder="开始日期 (YYYY-MM-DD)"
-                            value={historyOrderFilters.startDate}
-                            onChange={(e) => setHistoryOrderFilters({ ...historyOrderFilters, startDate: e.target.value })}
-                            style={{ width: 180 }}
-                          />
-                          
-                          <Input
-                            placeholder="结束日期 (YYYY-MM-DD)"
-                            value={historyOrderFilters.endDate}
-                            onChange={(e) => setHistoryOrderFilters({ ...historyOrderFilters, endDate: e.target.value })}
-                            style={{ width: 180 }}
-                          />
-                          
-                          <Button
-                            onClick={() => handleHistoryOrderFilter(historyOrderFilters)}
-                          >
-                            筛选
-                          </Button>
-                          
-                          <Button
-                            onClick={() => {
-                              setHistoryOrderFilters({ status: 'all', startDate: '', endDate: '' });
-                              fetchHistoryOrders(1, { status: 'all', startDate: '', endDate: '' });
-                            }}
-                          >
-                            重置
-                          </Button>
-                        </Space>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                        <Title level={3} style={{ margin: 0 }}>
+                          顾客管理
+                        </Title>
+                        <Button 
+                          type="primary" 
+                          onClick={() => fetchCustomers()}
+                        >
+                          刷新列表
+                        </Button>
                       </div>
 
+                                             <div style={{ marginBottom: 16 }}>
+                         <Text type="secondary">
+                           共 {Array.isArray(customers) ? customers.length : 0} 个注册顾客
+                         </Text>
+                       </div>
 
                       <Table
                         columns={[
                           {
-                            title: '订单ID',
+                            title: '用户ID',
                             dataIndex: 'id',
                             key: 'id',
                             width: 80,
                           },
                           {
-                            title: '取单号',
-                            dataIndex: 'pickup_number',
-                            key: 'pickup_number',
-                            width: 100,
+                            title: '用户名',
+                            dataIndex: 'username',
+                            key: 'username',
+                            width: 150,
                             render: (text) => (
-                              <Text strong style={{ color: '#1890ff', fontSize: '14px' }}>
-                                {text}
-                              </Text>
+                              <Text strong>{text}</Text>
                             ),
                           },
                           {
-                            title: '客户',
-                            dataIndex: 'customer_name',
-                            key: 'customer_name',
-                            width: 120,
-                          },
-                          {
-                            title: '商品',
-                            dataIndex: 'items',
-                            key: 'items',
-                            ellipsis: true,
-                            render: (items) => (
-                              <Text style={{ fontSize: '12px' }}>
-                                {items || '无商品信息'}
-                              </Text>
-                            ),
-                          },
-                          {
-                            title: '金额',
-                            dataIndex: 'total_amount',
-                            key: 'total_amount',
-                            width: 100,
-                            render: (amount) => `¥${amount}`,
-                          },
-                          {
-                            title: '状态',
-                            dataIndex: 'status',
-                            key: 'status',
-                            width: 120,
-                            render: (status) => getStatusTag(status),
-                          },
-                          {
-                            title: '下单时间',
+                            title: '注册时间',
                             dataIndex: 'created_at',
                             key: 'created_at',
                             width: 160,
                             render: (text) => formatDate(text),
                           },
+                          {
+                            title: '已完成订单数量',
+                            dataIndex: 'total_orders',
+                            key: 'total_orders',
+                            width: 100,
+                            render: (count) => (
+                              <Tag color="blue">{count} 个</Tag>
+                            ),
+                          },
+                          {
+                            title: '消费总额',
+                            dataIndex: 'total_spent',
+                            key: 'total_spent',
+                            width: 120,
+                            render: (amount) => (
+                              <Text strong style={{ color: '#52c41a' }}>
+                                ¥{(amount || 0).toFixed(2)}
+                              </Text>
+                            ),
+                          },
+                          {
+                            title: '操作',
+                            key: 'action',
+                            width: 200,
+                            render: (_, record) => (
+                              <Space>
+                                <Button
+                                  type="primary"
+                                  size="small"
+                                  icon={<EyeOutlined />}
+                                  onClick={() => showCustomerDetail(record)}
+                                >
+                                  详情
+                                </Button>
+                                <Button
+                                  size="small"
+                                  icon={<EditOutlined />}
+                                  onClick={() => showEditUsernameModal(record)}
+                                >
+                                  改名
+                                </Button>
+                                <Button
+                                  danger
+                                  size="small"
+                                  icon={<DeleteOutlined />}
+                                  onClick={() => handleDeleteCustomer(record)}
+                                >
+                                  删除
+                                </Button>
+                              </Space>
+                            ),
+                          },
                         ]}
-                        dataSource={historyOrders}
+                        dataSource={customers || []}
                         rowKey="id"
-                        loading={historyOrderLoading}
+                        loading={customerLoading}
                         pagination={{
-                          current: historyOrderPagination.current,
-                          pageSize: historyOrderPagination.pageSize,
-                          total: historyOrderPagination.total,
+                          total: Array.isArray(customers) ? customers.length : 0,
+                          pageSize: 10,
                           showSizeChanger: true,
                           showQuickJumper: true,
-                          showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 个订单`,
-                          onChange: handleHistoryOrderPagination,
-                          onShowSizeChange: handleHistoryOrderPagination,
+                          showTotal: (total) => `共 ${total} 个顾客`,
                         }}
-                        scroll={{ x: 1200 }}
+                        scroll={{ x: 800 }}
                       />
                     </div>
                   )
@@ -2180,6 +2246,13 @@ const AdminPage = () => {
                     dataSource={selectedOrder.items}
                     pagination={false}
                     size="small"
+                    rowKey={(record) => {
+                      // 使用商品名称、数量和细分配置组合生成唯一key
+                      const variantKey = record.variant_selections && record.variant_selections.length > 0 
+                        ? JSON.stringify(record.variant_selections) 
+                        : 'no-variant';
+                      return `${record.name}-${record.quantity}-${record.price}-${variantKey}`;
+                    }}
                     columns={[
                       {
                         title: '商品名称',
@@ -2192,13 +2265,13 @@ const AdminPage = () => {
                         key: 'variant_selections',
                         width: 200,
                         render: (variantSelections) => {
-                          if (!variantSelections || Object.keys(variantSelections).length === 0) {
+                          if (!variantSelections || variantSelections.length === 0) {
                             return <Text type="secondary">无细分</Text>;
                           }
                           
                           return (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                              {Object.values(variantSelections).map((selection, index) => (
+                              {variantSelections.map((selection, index) => (
                                 <Tag key={index} color="blue" style={{ margin: 0 }}>
                                   {selection.type_display_name}: {selection.option_display_name}
                                   {selection.price_adjustment !== 0 && (
@@ -2242,7 +2315,7 @@ const AdminPage = () => {
                       <Button
                         type="primary"
                         size="large"
-                        onClick={() => handleOrderStatusChange(selectedOrder.id, 'preparing')}
+                        onClick={() => handleOrderStatusChange(selectedOrder?.id, 'preparing')}
                       >
                         接单并开始制作
                       </Button>
@@ -2251,7 +2324,7 @@ const AdminPage = () => {
                       <Button
                         type="primary"
                         size="large"
-                        onClick={() => handleOrderStatusChange(selectedOrder.id, 'ready')}
+                        onClick={() => handleOrderStatusChange(selectedOrder?.id, 'ready')}
                       >
                         制作完成
                       </Button>
@@ -2260,7 +2333,7 @@ const AdminPage = () => {
                       <Button
                         type="primary"
                         size="large"
-                        onClick={() => handleOrderStatusChange(selectedOrder.id, 'completed')}
+                        onClick={() => handleOrderStatusChange(selectedOrder?.id, 'completed')}
                       >
                         确认取餐
                       </Button>
@@ -2268,7 +2341,7 @@ const AdminPage = () => {
                     {['pending', 'preparing'].includes(selectedOrder.status) && (
                       <Popconfirm
                         title="确定取消这个订单吗？"
-                        onConfirm={() => handleOrderStatusChange(selectedOrder.id, 'cancelled')}
+                        onConfirm={() => handleOrderStatusChange(selectedOrder?.id, 'cancelled')}
                       >
                         <Button danger size="large">
                           取消订单
@@ -2294,12 +2367,12 @@ const AdminPage = () => {
                 <div style={{ marginBottom: 20 }}>
                   <Space direction="vertical" style={{ width: '100%' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text><strong>用户ID:</strong> {selectedCustomer.user.id}</Text>
-                      <Text><strong>用户名:</strong> {selectedCustomer.user.username}</Text>
+                      <Text><strong>用户ID:</strong> {selectedCustomer?.user?.id}</Text>
+                      <Text><strong>用户名:</strong> {selectedCustomer?.user?.username}</Text>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text><strong>注册时间:</strong> {formatDate(selectedCustomer.user.created_at)}</Text>
-                      <Text><strong>订单总数:</strong> <Tag color="blue">{(selectedCustomer.orders || []).length} 个订单</Tag></Text>
+                      <Text><strong>注册时间:</strong> {formatDate(selectedCustomer?.user?.created_at)}</Text>
+                      <Text><strong>已完成订单总数:</strong> <Tag color="blue">{(selectedCustomer?.orders || []).filter(order => order.status === 'completed').length} 个订单</Tag></Text>
                     </div>
                   </Space>
                 </div>
@@ -2316,6 +2389,7 @@ const AdminPage = () => {
                         showTotal: (total) => `共 ${total} 个订单`,
                       }}
                       size="small"
+                      rowKey="id"
                       columns={[
                         {
                           title: '订单ID',
@@ -2338,12 +2412,46 @@ const AdminPage = () => {
                           title: '商品',
                           dataIndex: 'items',
                           key: 'items',
-                          ellipsis: true,
-                          render: (items) => (
-                            <Text style={{ fontSize: '12px' }}>
-                              {items || '无商品信息'}
-                            </Text>
-                          ),
+                          width: 300,
+                          render: (items, record) => {
+                            // 如果items是字符串，直接显示
+                            if (typeof items === 'string') {
+                              return (
+                                <Text style={{ fontSize: '12px' }}>
+                                  {items || '无商品信息'}
+                                </Text>
+                              );
+                            }
+                            
+                            // 如果items是数组，显示详细信息
+                            if (Array.isArray(items)) {
+                              return (
+                                <div style={{ fontSize: '12px' }}>
+                                  {items.map((item, index) => (
+                                    <div key={index} style={{ marginBottom: index < items.length - 1 ? 8 : 0 }}>
+                                      <Text strong>{item.name}</Text>
+                                      <Text type="secondary"> x{item.quantity}</Text>
+                                      {item.variant_selections && item.variant_selections.length > 0 && (
+                                        <div style={{ marginTop: 2 }}>
+                                          {item.variant_selections.map((selection, selIndex) => (
+                                            <Tag key={selIndex} size="small" color="blue" style={{ margin: '0 2px 2px 0' }}>
+                                              {selection.type_display_name}: {selection.option_display_name}
+                                            </Tag>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            }
+                            
+                            return (
+                              <Text style={{ fontSize: '12px' }} type="secondary">
+                                无商品信息
+                              </Text>
+                            );
+                          },
                         },
                         {
                           title: '金额',
@@ -2379,24 +2487,24 @@ const AdminPage = () => {
                   <div style={{ textAlign: 'center', padding: '20px 0', backgroundColor: '#f5f5f5', borderRadius: 6 }}>
                     <Space size="large">
                       <div>
-                        <Text type="secondary">订单总数</Text>
+                        <Text type="secondary">已完成订单总数</Text>
                         <br />
                         <Text strong style={{ fontSize: '18px', color: '#1890ff' }}>
-                          {(selectedCustomer.orders || []).length}
+                          {(selectedCustomer.orders || []).filter(order => order.status === 'completed').length}
                         </Text>
                       </div>
                       <div>
                         <Text type="secondary">消费总额</Text>
                         <br />
                         <Text strong style={{ fontSize: '18px', color: '#52c41a' }}>
-                          ¥{selectedCustomer.orders.reduce((sum, order) => sum + parseFloat(order.total_amount), 0).toFixed(2)}
+                          ¥{(selectedCustomer?.orders || []).filter(order => order.status === 'completed').reduce((sum, order) => sum + parseFloat(order.total_amount), 0).toFixed(2)}
                         </Text>
                       </div>
                       <div>
                         <Text type="secondary">平均订单金额</Text>
                         <br />
                         <Text strong style={{ fontSize: '18px', color: '#722ed1' }}>
-                          ¥{((selectedCustomer.orders || []).reduce((sum, order) => sum + parseFloat(order.total_amount), 0) / (selectedCustomer.orders || []).length).toFixed(2)}
+                          ¥{(selectedCustomer?.orders || []).filter(order => order.status === 'completed').length > 0 ? ((selectedCustomer?.orders || []).filter(order => order.status === 'completed').reduce((sum, order) => sum + parseFloat(order.total_amount), 0) / (selectedCustomer?.orders || []).filter(order => order.status === 'completed').length).toFixed(2) : '0.00'}
                         </Text>
                       </div>
                     </Space>
@@ -2419,15 +2527,15 @@ const AdminPage = () => {
                 <div style={{ marginBottom: 20, padding: 16, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
                   <Space direction="vertical" style={{ width: '100%' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text><strong>订单ID:</strong> #{selectedOrderForStatus.id}</Text>
-                      <Text><strong>取单号:</strong> <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{selectedOrderForStatus.pickup_number}</span></Text>
+                      <Text><strong>订单ID:</strong> #{selectedOrderForStatus?.id}</Text>
+                      <Text><strong>取单号:</strong> <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{selectedOrderForStatus?.pickup_number}</span></Text>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text><strong>客户:</strong> {selectedOrderForStatus.username}</Text>
-                      <Text><strong>金额:</strong> ¥{selectedOrderForStatus.total_amount}</Text>
+                      <Text><strong>客户:</strong> {selectedOrderForStatus?.username}</Text>
+                      <Text><strong>金额:</strong> ¥{selectedOrderForStatus?.total_amount}</Text>
                     </div>
                     <div>
-                      <Text><strong>当前状态:</strong> {getStatusTag(selectedOrderForStatus.status)}</Text>
+                      <Text><strong>当前状态:</strong> {getStatusTag(selectedOrderForStatus?.status)}</Text>
                     </div>
                   </Space>
                 </div>
@@ -2497,17 +2605,56 @@ const AdminPage = () => {
             )}
           </Modal>
 
-          {/* 标签管理模态框 */}
-          <Modal
-            title="标签管理"
-            open={tagModalVisible}
-            onCancel={() => {
-              setTagModalVisible(false);
-              tagForm.resetFields();
-            }}
-            footer={null}
-            width={600}
+                  {/* 编辑用户名模态框 */}
+        <Modal
+          title={`编辑顾客用户名 - ${editingCustomer?.username}`}
+          open={editUsernameModalVisible}
+          onOk={() => usernameForm.submit()}
+          onCancel={cancelEditUsername}
+          okText="保存"
+          cancelText="取消"
+        >
+          <Form
+            form={usernameForm}
+            layout="vertical"
+            onFinish={handleUsernameSubmit}
           >
+            <Form.Item
+              label="新用户名"
+              name="username"
+              rules={[
+                { required: true, message: '请输入用户名' },
+                { min: 2, message: '用户名至少2个字符' },
+                { max: 20, message: '用户名最多20个字符' },
+                {
+                  pattern: /^[a-zA-Z0-9\u4e00-\u9fa5_-]+$/,
+                  message: '用户名只能包含字母、数字、中文、下划线和短横线'
+                }
+              ]}
+            >
+              <Input 
+                placeholder="请输入新的用户名"
+                maxLength={20}
+                showCount
+              />
+            </Form.Item>
+            <div style={{ color: '#666', fontSize: '12px', marginTop: '-10px' }}>
+              提示：用户名修改后将立即生效，用户下次登录时需使用新用户名
+            </div>
+          </Form>
+        </Modal>
+
+        {/* 标签管理模态框 */}
+        <Modal
+          title="标签管理"
+          open={tagModalVisible}
+          onCancel={() => {
+            setTagModalVisible(false);
+            tagForm.resetFields();
+          }}
+          footer={null}
+          width={600}
+        >
             <div style={{ marginBottom: 24 }}>
               <Title level={5}>创建新标签</Title>
               <Form

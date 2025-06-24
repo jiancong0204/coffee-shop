@@ -164,7 +164,7 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
           className="cart-button"
           style={{ color: '#ff4d4f', borderColor: '#ff4d4f' }}
         >
-          暂时缺货
+          已售罄
         </Button>
       );
     }
