@@ -1,23 +1,54 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Card, Button, Tabs, Typography, Row, Col, message, Image } from 'antd';
-import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
+import { Layout, Card, Button, Tabs, Typography, Row, Col, message, Image, Modal } from 'antd';
+import { PlusOutlined, MinusOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import pinyin from 'pinyin';
+import ProductVariantSelector from '../components/ProductVariantSelector';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
 
 function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpdateCart, cartItems, navigate }) {
   const [isUpdating, setIsUpdating] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [variantSelectorVisible, setVariantSelectorVisible] = useState(false);
 
-  const onAddToCart = async (productId) => {
+  const onAddToCart = async (productId, variantSelections, quantity = 1) => {
     setIsUpdating(productId);
     try {
-      await handleAddToCart(productId);
+      await handleAddToCart(productId, quantity, variantSelections);
     } finally {
       setIsUpdating(null);
+    }
+  };
+
+  // 显示细分选项选择器
+  const showVariantSelector = (product) => {
+    setSelectedProduct(product);
+    setVariantSelectorVisible(true);
+  };
+
+  // 处理添加到购物车（带细分选项）
+  const handleAddToCartWithVariants = async (product) => {
+    // 检查是否有细分选项
+    if (product.variantTypes && product.variantTypes.length > 0) {
+      showVariantSelector(product);
+    } else {
+      // 没有细分选项，直接添加
+      await onAddToCart(product.id);
+    }
+  };
+
+  // 确认细分选项选择
+  const handleVariantConfirm = async ({ quantity, variantSelections }) => {
+    try {
+      setVariantSelectorVisible(false);
+      await onAddToCart(selectedProduct.id, variantSelections, quantity);
+      setSelectedProduct(null);
+    } catch (error) {
+      console.error('添加到购物车失败:', error);
     }
   };
 
@@ -30,8 +61,48 @@ function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpd
     }
   };
 
-  const getCartQuantity = (productId) => {
-    const cartItem = cartItems.find(item => item.product_id === productId);
+  // 检查商品是否有多种配置
+  const hasMultipleConfigurations = (productId) => {
+    const productItems = cartItems.filter(item => item.product_id === productId);
+    return productItems.length > 1;
+  };
+
+  // 处理减少数量
+  const handleDecreaseQuantity = (product) => {
+    if (hasMultipleConfigurations(product.id)) {
+      // 显示提示模态框
+      Modal.confirm({
+        title: '前往购物车管理',
+        content: '不同规格的商品请前往购物车减购',
+        okText: '前往购物车',
+        cancelText: '取消',
+        icon: <ShoppingCartOutlined style={{ color: '#1890ff' }} />,
+        onOk: () => {
+          navigate('/cart', { state: { highlightProductId: product.id } });
+        },
+      });
+    } else {
+      // 只有一种配置，直接减少
+      const quantity = getCartQuantity(product.id);
+      onUpdateQuantity(product.id, quantity - 1);
+    }
+  };
+
+  const getCartQuantity = (productId, variantSelections = {}) => {
+    // 如果没有细分选择，就按原有逻辑获取该商品的总数量
+    if (!variantSelections || Object.keys(variantSelections).length === 0) {
+      // 返回该商品所有配置的总数量
+      return cartItems
+        .filter(item => item.product_id === productId)
+        .reduce((total, item) => total + item.quantity, 0);
+    }
+    
+    // 如果有细分选择，需要找到完全匹配的项目
+    const variantSelectionsStr = JSON.stringify(variantSelections);
+    const cartItem = cartItems.find(item => 
+      item.product_id === productId && 
+      JSON.stringify(item.variant_selections || {}) === variantSelectionsStr
+    );
     return cartItem ? cartItem.quantity : 0;
   };
 
@@ -70,7 +141,7 @@ function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpd
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => onAddToCart(product.id)}
+          onClick={() => handleAddToCartWithVariants(product)}
           disabled={!product.available || !hasStock || isLoading}
           loading={isLoading}
           className="cart-button"
@@ -85,7 +156,7 @@ function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpd
         <Button
           size="small"
           icon={<MinusOutlined />}
-          onClick={() => onUpdateQuantity(product.id, quantity - 1)}
+          onClick={() => handleDecreaseQuantity(product)}
           disabled={isLoading}
           className="quantity-btn"
         />
@@ -95,7 +166,7 @@ function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpd
         <Button
           size="small"
           icon={<PlusOutlined />}
-          onClick={() => onUpdateQuantity(product.id, quantity + 1)}
+          onClick={() => handleAddToCartWithVariants(product)}
           disabled={isLoading || !canAddMore}
           className="quantity-btn"
           title={!canAddMore ? '库存不足' : ''}
@@ -173,6 +244,17 @@ function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpd
           </div>
         </Card>
       ))}
+      
+      {/* 商品细分选项选择器 */}
+      <ProductVariantSelector
+        visible={variantSelectorVisible}
+        onCancel={() => {
+          setVariantSelectorVisible(false);
+          setSelectedProduct(null);
+        }}
+        onConfirm={handleVariantConfirm}
+        product={selectedProduct}
+      />
     </div>
   );
 }
@@ -342,7 +424,7 @@ const HomePage = () => {
     }
   };
 
-  const handleAddToCart = async (productId) => {
+  const handleAddToCart = async (productId, quantity = 1, variantSelections = {}) => {
     if (!isLoggedIn()) {
       message.warning('请先登录');
       navigate('/login');
@@ -355,7 +437,7 @@ const HomePage = () => {
     }
 
     try {
-      await api.addToCart(productId, 1);
+      await api.addToCart(productId, quantity, variantSelections);
       message.success('已添加到购物车');
       fetchCart(); // 刷新购物车
     } catch (error) {
@@ -376,7 +458,7 @@ const HomePage = () => {
     }
 
     try {
-      // 找到对应的购物车项
+      // 找到对应的购物车项（如果有多个配置，取第一个）
       const cartItem = cartItems.find(item => item.product_id === productId);
       if (!cartItem) {
         message.error('购物车项不存在');

@@ -89,6 +89,63 @@ class ApiService {
     return this.put(`/products/${id}`, productData);
   }
 
+  // 细分类型相关API
+  getVariantTypes() {
+    return this.get('/variants/types');
+  }
+
+  getProductVariants(productId) {
+    return this.get(`/variants/product/${productId}`);
+  }
+
+  createVariantType(data) {
+    return this.post('/variants/types', data);
+  }
+
+  updateVariantType(id, data) {
+    return this.put(`/variants/types/${id}`, data);
+  }
+
+  deleteVariantType(id) {
+    return this.delete(`/variants/types/${id}`);
+  }
+
+  createVariantOption(data) {
+    return this.post('/variants/options', data);
+  }
+
+  updateVariantOption(id, data) {
+    return this.put(`/variants/options/${id}`, data);
+  }
+
+  deleteVariantOption(id) {
+    return this.delete(`/variants/options/${id}`);
+  }
+
+  configureProductVariants(productId, variantTypeId, config) {
+    return this.post(`/variants/product/${productId}/types`, {
+      variant_type_id: variantTypeId,
+      ...config
+    });
+  }
+
+  removeProductVariant(productId, variantTypeId) {
+    return this.delete(`/variants/product/${productId}/types/${variantTypeId}`);
+  }
+
+  // 配置商品的细分选项
+  configureProductVariantOptions(productId, variantTypeId, enabledOptions) {
+    return this.post(`/variants/product/${productId}/options`, {
+      variant_type_id: variantTypeId,
+      enabled_options: enabledOptions
+    });
+  }
+
+  // 获取商品的细分选项配置
+  getProductVariantOptions(productId, variantTypeId) {
+    return this.get(`/variants/product/${productId}/options/${variantTypeId}`);
+  }
+
   deleteProduct(id) {
     return this.delete(`/products/${id}`);
   }
@@ -102,8 +159,12 @@ class ApiService {
     return this.get('/cart');
   }
 
-  addToCart(productId, quantity = 1) {
-    return this.post('/cart/add', { product_id: productId, quantity });
+  addToCart(productId, quantity = 1, variantSelections = {}) {
+    return this.post('/cart/add', { 
+      product_id: productId, 
+      quantity,
+      variant_selections: variantSelections 
+    });
   }
 
   updateCartItem(cartId, quantity) {

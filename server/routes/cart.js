@@ -13,6 +13,7 @@ router.get('/', authenticateToken, (req, res) => {
     SELECT 
       c.id as cart_id,
       c.quantity,
+      c.variant_selections,
       p.id as product_id,
       p.name,
       p.description,
@@ -32,12 +33,45 @@ router.get('/', authenticateToken, (req, res) => {
       return res.status(500).json({ error: '服务器错误' });
     }
 
-    const totalAmount = cartItems.reduce((sum, item) => sum + item.total_price, 0);
+    // 处理细分选项信息并计算价格调整
+    const processedItems = cartItems.map(item => {
+      let variantSelections = {};
+      let priceAdjustment = 0;
+      
+      if (item.variant_selections) {
+        try {
+          variantSelections = JSON.parse(item.variant_selections);
+          
+          // 计算价格调整
+          if (variantSelections && typeof variantSelections === 'object') {
+            Object.values(variantSelections).forEach(selection => {
+              if (selection && typeof selection.price_adjustment === 'number') {
+                priceAdjustment += selection.price_adjustment;
+              }
+            });
+          }
+        } catch (e) {
+          console.error('Error parsing variant_selections:', e);
+        }
+      }
+      
+      const adjustedPrice = item.price + priceAdjustment;
+      const totalPrice = adjustedPrice * item.quantity;
+      
+      return {
+        ...item,
+        variant_selections: variantSelections,
+        adjusted_price: adjustedPrice,
+        total_price: totalPrice
+      };
+    });
+
+    const totalAmount = processedItems.reduce((sum, item) => sum + item.total_price, 0);
 
     res.json({
-      items: cartItems,
+      items: processedItems,
       totalAmount: totalAmount,
-      itemCount: cartItems.length
+      itemCount: processedItems.length
     });
   });
 });
@@ -45,7 +79,8 @@ router.get('/', authenticateToken, (req, res) => {
 // 添加商品到购物车
 router.post('/add', authenticateToken, [
   body('product_id').isInt({ min: 1 }).withMessage('商品ID必须是正整数'),
-  body('quantity').optional().isInt({ min: 1 }).withMessage('数量必须是正整数')
+  body('quantity').optional().isInt({ min: 1 }).withMessage('数量必须是正整数'),
+  body('variant_selections').optional().isObject().withMessage('细分选项必须是对象')
 ], (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -53,7 +88,7 @@ router.post('/add', authenticateToken, [
   }
 
   const userId = req.user.id;
-  const { product_id, quantity = 1 } = req.body;
+  const { product_id, quantity = 1, variant_selections = {} } = req.body;
 
   // 检查商品是否存在且可用
   db.get('SELECT * FROM products WHERE id = ? AND available = true', [product_id], (err, product) => {
@@ -66,8 +101,9 @@ router.post('/add', authenticateToken, [
       return res.status(404).json({ error: '商品不存在或不可用' });
     }
 
-    // 检查购物车中是否已有该商品
-    db.get('SELECT * FROM cart WHERE user_id = ? AND product_id = ?', [userId, product_id], (err, existingItem) => {
+    // 检查购物车中是否已有该商品（包括细分选项）
+    const variantSelectionsStr = JSON.stringify(variant_selections);
+    db.get('SELECT * FROM cart WHERE user_id = ? AND product_id = ? AND variant_selections = ?', [userId, product_id, variantSelectionsStr], (err, existingItem) => {
       if (err) {
         console.error('Database error:', err);
         return res.status(500).json({ error: '服务器错误' });
@@ -90,8 +126,8 @@ router.post('/add', authenticateToken, [
       } else {
         // 新增商品
         db.run(
-          'INSERT INTO cart (user_id, product_id, quantity) VALUES (?, ?, ?)',
-          [userId, product_id, quantity],
+          'INSERT INTO cart (user_id, product_id, quantity, variant_selections) VALUES (?, ?, ?, ?)',
+          [userId, product_id, quantity, variantSelectionsStr],
           function(err) {
             if (err) {
               console.error('Database error:', err);

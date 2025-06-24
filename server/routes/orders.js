@@ -9,9 +9,35 @@ const router = express.Router();
 router.post('/checkout', authenticateToken, (req, res) => {
   const userId = req.user.id;
 
-  // 生成取单号（6位数字）
-  const generatePickupNumber = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+  // 生成同一天内递增的取单号
+  const generatePickupNumber = async () => {
+    return new Promise((resolve, reject) => {
+      // 获取今天日期字符串 (YYYY-MM-DD)
+      const today = new Date().toISOString().split('T')[0];
+      
+      // 查询今天最大的取单号
+      const sql = `
+        SELECT MAX(CAST(pickup_number AS INTEGER)) as max_pickup_number 
+        FROM orders 
+        WHERE DATE(created_at) = ? AND pickup_number IS NOT NULL
+      `;
+      
+      db.get(sql, [today], (err, row) => {
+        if (err) {
+          console.error('Database error:', err);
+          reject(err);
+          return;
+        }
+        
+        // 如果今天还没有订单，从1开始；否则递增
+        const nextNumber = (row && row.max_pickup_number) ? row.max_pickup_number + 1 : 1;
+        
+        // 确保是3位数，不足3位前面补0
+        const pickupNumber = nextNumber.toString().padStart(3, '0');
+        
+        resolve(pickupNumber);
+      });
+    });
   };
 
   // 获取购物车商品
@@ -19,6 +45,7 @@ router.post('/checkout', authenticateToken, (req, res) => {
     SELECT 
       c.product_id,
       c.quantity,
+      c.variant_selections,
       p.price,
       p.name,
       p.available
@@ -75,7 +102,7 @@ router.post('/checkout', authenticateToken, (req, res) => {
       const totalAmount = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
       // 生成唯一取单号
-      const createOrderWithPickupNumber = (retryCount = 0) => {
+      const createOrderWithPickupNumber = async (retryCount = 0) => {
         if (retryCount > 10) {
           // 恢复库存
           for (const reservation of stockReservations) {
@@ -84,91 +111,100 @@ router.post('/checkout', authenticateToken, (req, res) => {
           return res.status(500).json({ error: '生成取单号失败，请重试' });
         }
 
-        const pickupNumber = generatePickupNumber();
+        try {
+          const pickupNumber = await generatePickupNumber();
 
-        // 开始事务
-        db.serialize(() => {
-          db.run('BEGIN TRANSACTION');
+          // 开始事务
+          db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
 
-          // 创建订单
-          db.run(
-            'INSERT INTO orders (user_id, pickup_number, total_amount, status) VALUES (?, ?, ?, ?)',
-            [userId, pickupNumber, totalAmount, 'pending'],
-            function(err) {
-              if (err) {
-                if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-                  // 取单号重复，重新生成
-                  db.run('ROLLBACK');
-                  return createOrderWithPickupNumber(retryCount + 1);
-                }
-                console.error('Database error:', err);
-                db.run('ROLLBACK');
-                // 恢复库存
-                for (const reservation of stockReservations) {
-                  productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
-                }
-                return res.status(500).json({ error: '创建订单失败' });
-              }
-
-              const orderId = this.lastID;
-
-              // 添加订单详情
-              let itemsAdded = 0;
-              let hasError = false;
-
-              cartItems.forEach(item => {
-                if (hasError) return;
-
-                db.run(
-                  'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)',
-                  [orderId, item.product_id, item.quantity, item.price],
-                  function(err) {
-                    if (err) {
-                      console.error('Database error:', err);
-                      hasError = true;
-                      db.run('ROLLBACK');
-                      // 恢复库存
-                      for (const reservation of stockReservations) {
-                        productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
-                      }
-                      return res.status(500).json({ error: '创建订单详情失败' });
-                    }
-
-                    itemsAdded++;
-                    
-                    if (itemsAdded === cartItems.length) {
-                      // 清空购物车
-                      db.run('DELETE FROM cart WHERE user_id = ?', [userId], (err) => {
-                        if (err) {
-                          console.error('Database error:', err);
-                          db.run('ROLLBACK');
-                          // 恢复库存
-                          for (const reservation of stockReservations) {
-                            productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
-                          }
-                          return res.status(500).json({ error: '清空购物车失败' });
-                        }
-
-                        db.run('COMMIT');
-                        console.log(`订单 ${orderId} 创建成功，已减少相关商品库存`);
-                        res.status(201).json({
-                          message: '订单创建成功',
-                          order: {
-                            id: orderId,
-                            pickup_number: pickupNumber,
-                            total_amount: totalAmount,
-                            status: 'pending',
-                            items: cartItems
-                          }
-                        });
-                      });
-                    }
+            // 创建订单
+            db.run(
+              'INSERT INTO orders (user_id, pickup_number, total_amount, status) VALUES (?, ?, ?, ?)',
+              [userId, pickupNumber, totalAmount, 'pending'],
+              function(err) {
+                if (err) {
+                  if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+                    // 取单号重复，重新生成
+                    db.run('ROLLBACK');
+                    return createOrderWithPickupNumber(retryCount + 1);
                   }
-                );
-              });
-            }
-          );
-        });
+                  console.error('Database error:', err);
+                  db.run('ROLLBACK');
+                  // 恢复库存
+                  for (const reservation of stockReservations) {
+                    productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+                  }
+                  return res.status(500).json({ error: '创建订单失败' });
+                }
+
+                const orderId = this.lastID;
+
+                // 添加订单详情
+                let itemsAdded = 0;
+                let hasError = false;
+
+                cartItems.forEach(item => {
+                  if (hasError) return;
+
+                  db.run(
+                    'INSERT INTO order_items (order_id, product_id, quantity, price, variant_selections) VALUES (?, ?, ?, ?, ?)',
+                    [orderId, item.product_id, item.quantity, item.price, item.variant_selections],
+                    function(err) {
+                      if (err) {
+                        console.error('Database error:', err);
+                        hasError = true;
+                        db.run('ROLLBACK');
+                        // 恢复库存
+                        for (const reservation of stockReservations) {
+                          productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+                        }
+                        return res.status(500).json({ error: '创建订单详情失败' });
+                      }
+
+                      itemsAdded++;
+                      
+                      if (itemsAdded === cartItems.length) {
+                        // 清空购物车
+                        db.run('DELETE FROM cart WHERE user_id = ?', [userId], (err) => {
+                          if (err) {
+                            console.error('Database error:', err);
+                            db.run('ROLLBACK');
+                            // 恢复库存
+                            for (const reservation of stockReservations) {
+                              productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+                            }
+                            return res.status(500).json({ error: '清空购物车失败' });
+                          }
+
+                          db.run('COMMIT');
+                          console.log(`订单 ${orderId} 创建成功，已减少相关商品库存`);
+                          res.status(201).json({
+                            message: '订单创建成功',
+                            order: {
+                              id: orderId,
+                              pickup_number: pickupNumber,
+                              total_amount: totalAmount,
+                              status: 'pending',
+                              items: cartItems
+                            }
+                          });
+                        });
+                      }
+                    }
+                  );
+                });
+              }
+            );
+          });
+        } catch (error) {
+          console.error('生成取单号失败:', error);
+          // 恢复库存
+          for (const reservation of stockReservations) {
+            productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
+          }
+          return res.status(500).json({ error: '生成取单号失败，请重试' });
+        }
       };
 
       createOrderWithPickupNumber();
@@ -231,6 +267,7 @@ router.get('/:order_id', authenticateToken, (req, res) => {
         SELECT 
           oi.quantity,
           oi.price,
+          oi.variant_selections,
           p.name,
           p.description,
           p.image_url,
@@ -246,9 +283,15 @@ router.get('/:order_id', authenticateToken, (req, res) => {
           return res.status(500).json({ error: '服务器错误' });
         }
 
+        // 解析 variant_selections JSON 字段
+        const processedItems = items.map(item => ({
+          ...item,
+          variant_selections: item.variant_selections ? JSON.parse(item.variant_selections) : null
+        }));
+
         res.json({
           ...order,
-          items: items
+          items: processedItems
         });
       });
     }
@@ -328,6 +371,7 @@ router.get('/admin/:order_id', authenticateToken, requireAdmin, (req, res) => {
         SELECT 
           oi.quantity,
           oi.price,
+          oi.variant_selections,
           p.name,
           p.description,
           p.image_url,
@@ -343,9 +387,15 @@ router.get('/admin/:order_id', authenticateToken, requireAdmin, (req, res) => {
           return res.status(500).json({ error: '服务器错误' });
         }
 
+        // 解析 variant_selections JSON 字段
+        const processedItems = items.map(item => ({
+          ...item,
+          variant_selections: item.variant_selections ? JSON.parse(item.variant_selections) : null
+        }));
+
         res.json({
           ...order,
-          items: items
+          items: processedItems
         });
       });
     }

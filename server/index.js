@@ -16,6 +16,7 @@ const orderRoutes = require('./routes/orders');
 const uploadRoutes = require('./routes/upload');
 const userRoutes = require('./routes/users');
 const tagRoutes = require('./routes/tags');
+const variantRoutes = require('./routes/variants');
 
 const app = express();
 const PORT = config.port;
@@ -84,6 +85,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tags', tagRoutes);
+app.use('/api/variants', variantRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {

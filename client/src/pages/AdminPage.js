@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Card, Table, Button, Modal, Form, Input, InputNumber, Select, message, Space, Popconfirm, Typography, Tabs, Tag, Badge, Upload, Image } from 'antd';
+import { Layout, Card, Table, Button, Modal, Form, Input, InputNumber, Select, message, Space, Popconfirm, Typography, Tabs, Tag, Badge, Upload, Image, Checkbox } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined, ShoppingOutlined, CheckOutlined, ClockCircleOutlined, EyeOutlined, UserOutlined, LockOutlined, UploadOutlined, InboxOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +35,27 @@ const AdminPage = () => {
   const [customerLoading, setCustomerLoading] = useState(false);
   const [historyOrders, setHistoryOrders] = useState([]);
   const [historyOrderLoading, setHistoryOrderLoading] = useState(false);
+  
+  // 细分类型管理相关状态
+  const [variantTypes, setVariantTypes] = useState([]);
+  const [variantTypeLoading, setVariantTypeLoading] = useState(false);
+  const [variantTypeModalVisible, setVariantTypeModalVisible] = useState(false);
+  const [variantOptionModalVisible, setVariantOptionModalVisible] = useState(false);
+  const [productVariantModalVisible, setProductVariantModalVisible] = useState(false);
+  const [editingVariantType, setEditingVariantType] = useState(null);
+  const [editingVariantOption, setEditingVariantOption] = useState(null);
+  const [selectedProductForVariant, setSelectedProductForVariant] = useState(null);
+  const [productVariantTypes, setProductVariantTypes] = useState([]); // 当前商品已配置的细分类型
+  const [addVariantModalVisible, setAddVariantModalVisible] = useState(false); // 添加细分类型模态框
+  const [selectedVariantTypeOptions, setSelectedVariantTypeOptions] = useState([]); // 选定细分类型的选项
+  const [optionConfigModalVisible, setOptionConfigModalVisible] = useState(false); // 选项配置模态框
+  const [currentVariantType, setCurrentVariantType] = useState(null); // 当前编辑的细分类型
+  const [currentVariantOptions, setCurrentVariantOptions] = useState([]); // 当前编辑的细分类型的所有选项
+  const [optionConfigForm] = Form.useForm(); // 选项配置表单
+  const [variantTypeForm] = Form.useForm();
+  const [variantOptionForm] = Form.useForm();
+  const [productVariantForm] = Form.useForm();
+  const [addVariantForm] = Form.useForm();
   const [historyOrderPagination, setHistoryOrderPagination] = useState({
     current: 1,
     pageSize: 20,
@@ -83,6 +104,8 @@ const AdminPage = () => {
       fetchCustomers();
     } else if (activeTab === 'history' && (!historyOrders || historyOrders.length === 0)) {
       fetchHistoryOrders();
+    } else if (activeTab === 'variants' && (!variantTypes || variantTypes.length === 0)) {
+      fetchVariantTypes();
     }
   }, [activeTab]);
 
@@ -332,10 +355,10 @@ const AdminPage = () => {
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 220,
       fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space size="small" wrap>
           <Button
             type="primary"
             size="small"
@@ -343,6 +366,14 @@ const AdminPage = () => {
             onClick={() => showModal(record)}
           >
             编辑
+          </Button>
+          <Button
+            size="small"
+            icon={<SettingOutlined />}
+            onClick={() => showProductVariantModal(record)}
+            title="配置细分"
+          >
+            细分
           </Button>
           <Popconfirm
             title="确定删除这个商品吗？"
@@ -352,6 +383,7 @@ const AdminPage = () => {
               danger
               size="small"
               icon={<DeleteOutlined />}
+              title="删除商品"
             >
               删除
             </Button>
@@ -775,6 +807,312 @@ const AdminPage = () => {
     });
   };
 
+  // 细分类型管理相关函数
+  const fetchVariantTypes = async () => {
+    setVariantTypeLoading(true);
+    try {
+      const response = await api.getVariantTypes();
+      setVariantTypes(response.data || []);
+    } catch (error) {
+      message.error('获取细分类型失败');
+      setVariantTypes([]);
+    } finally {
+      setVariantTypeLoading(false);
+    }
+  };
+
+  const showVariantTypeModal = (variantType = null) => {
+    setEditingVariantType(variantType);
+    setVariantTypeModalVisible(true);
+    if (variantType) {
+      variantTypeForm.setFieldsValue(variantType);
+    } else {
+      variantTypeForm.resetFields();
+    }
+  };
+
+  const showVariantOptionModal = (variantType, option = null) => {
+    setEditingVariantType(variantType);
+    setEditingVariantOption(option);
+    setVariantOptionModalVisible(true);
+    if (option) {
+      variantOptionForm.setFieldsValue(option);
+    } else {
+      variantOptionForm.resetFields();
+      variantOptionForm.setFieldsValue({ variant_type_id: variantType.id });
+    }
+  };
+
+  const showProductVariantModal = async (product) => {
+    setSelectedProductForVariant(product);
+    setProductVariantModalVisible(true);
+    
+    // 确保细分类型数据已加载
+    if (!variantTypes || variantTypes.length === 0) {
+      await fetchVariantTypes();
+    }
+    
+    // 加载商品的细分类型配置
+    try {
+      const response = await api.getProductVariants(product.id);
+      const productVariants = response.data || [];
+      setProductVariantTypes(productVariants);
+    } catch (error) {
+      console.error('获取商品细分类型配置失败:', error);
+      setProductVariantTypes([]);
+    }
+  };
+
+  // 显示添加细分类型模态框
+  const showAddVariantModal = async () => {
+    // 确保细分类型数据已加载
+    if (!variantTypes || variantTypes.length === 0) {
+      await fetchVariantTypes();
+    }
+    
+    setAddVariantModalVisible(true);
+    addVariantForm.resetFields();
+    setSelectedVariantTypeOptions([]);
+  };
+
+  // 处理细分类型选择变化
+  const handleVariantTypeChange = (variantTypeId) => {
+    if (variantTypeId) {
+      const selectedType = variantTypes.find(vt => vt.id === variantTypeId);
+      if (selectedType && selectedType.options) {
+        setSelectedVariantTypeOptions(selectedType.options);
+        // 默认选择所有选项
+        addVariantForm.setFieldsValue({
+          enabled_options: selectedType.options.map(option => option.id)
+        });
+      } else {
+        setSelectedVariantTypeOptions([]);
+      }
+    } else {
+      setSelectedVariantTypeOptions([]);
+    }
+  };
+
+  // 添加细分类型到商品
+  const handleAddVariantToProduct = async (values) => {
+    try {
+      await api.configureProductVariants(selectedProductForVariant.id, values.variant_type_id, {
+        is_required: values.is_required || false,
+        sort_order: values.sort_order || 0
+      });
+      
+      // 如果选择了具体的选项，配置选项
+      if (values.enabled_options && values.enabled_options.length > 0) {
+        await api.configureProductVariantOptions(
+          selectedProductForVariant.id, 
+          values.variant_type_id, 
+          values.enabled_options
+        );
+      }
+      
+      message.success('细分类型添加成功');
+      setAddVariantModalVisible(false);
+      // 重新加载商品细分类型配置
+      const response = await api.getProductVariants(selectedProductForVariant.id);
+      setProductVariantTypes(response.data || []);
+    } catch (error) {
+      message.error('添加失败');
+    }
+  };
+
+  // 删除商品的细分类型
+  const handleRemoveVariantFromProduct = (variantTypeId) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要从此商品中移除这个细分类型吗？',
+      onOk: async () => {
+        try {
+          await api.removeProductVariant(selectedProductForVariant.id, variantTypeId);
+          message.success('细分类型移除成功');
+          // 重新加载商品细分类型配置
+          const response = await api.getProductVariants(selectedProductForVariant.id);
+          setProductVariantTypes(response.data || []);
+        } catch (error) {
+          message.error('移除失败');
+        }
+      },
+    });
+  };
+
+  // 更新商品细分类型配置
+  const handleUpdateProductVariant = async (variantTypeId, config) => {
+    try {
+      await api.configureProductVariants(selectedProductForVariant.id, variantTypeId, config);
+      message.success('配置更新成功');
+      // 重新加载商品细分类型配置
+      const response = await api.getProductVariants(selectedProductForVariant.id);
+      setProductVariantTypes(response.data || []);
+    } catch (error) {
+      message.error('更新失败');
+    }
+  };
+
+  // 显示选项配置模态框
+  const showOptionConfigModal = async (variantType) => {
+    setCurrentVariantType(variantType);
+    setOptionConfigModalVisible(true);
+    
+    try {
+      // 获取当前商品此细分类型的选项配置
+      const response = await api.getProductVariantOptions(selectedProductForVariant.id, variantType.id);
+      const options = response.data || [];
+      
+      // 保存完整的选项列表，并按权重排序
+      const sortedOptions = [...options].sort((a, b) => {
+        // 先按 product_sort_order 排序（如果存在），然后按 sort_order 排序
+        const aOrder = a.product_sort_order !== null ? a.product_sort_order : a.sort_order || 999;
+        const bOrder = b.product_sort_order !== null ? b.product_sort_order : b.sort_order || 999;
+        
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+        
+        // 如果排序相同，按显示名称排序
+        return (a.display_name || '').localeCompare(b.display_name || '');
+      });
+      setCurrentVariantOptions(sortedOptions);
+      
+      // 设置表单默认值
+      const enabledOptions = options
+        .filter(option => option.product_enabled)
+        .map(option => option.id);
+      
+      optionConfigForm.setFieldsValue({
+        enabled_options: enabledOptions
+      });
+    } catch (error) {
+      console.error('获取选项配置失败:', error);
+      // 如果获取失败，使用默认选项列表，并按权重排序
+      const defaultOptions = [...(variantType.options || [])].sort((a, b) => {
+        const aOrder = a.sort_order || 999;
+        const bOrder = b.sort_order || 999;
+        
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+        
+        return (a.display_name || '').localeCompare(b.display_name || '');
+      });
+      setCurrentVariantOptions(defaultOptions);
+      optionConfigForm.setFieldsValue({
+        enabled_options: defaultOptions.map(option => option.id) || []
+      });
+    }
+  };
+
+  // 处理选项配置提交
+  const handleOptionConfigSubmit = async (values) => {
+    try {
+      await api.configureProductVariantOptions(
+        selectedProductForVariant.id,
+        currentVariantType.id,
+        values.enabled_options || []
+      );
+      message.success('选项配置更新成功');
+      setOptionConfigModalVisible(false);
+      // 重新加载商品细分类型配置
+      const response = await api.getProductVariants(selectedProductForVariant.id);
+      setProductVariantTypes(response.data || []);
+    } catch (error) {
+      message.error('配置更新失败');
+    }
+  };
+
+  const handleVariantTypeSubmit = async (values) => {
+    try {
+      if (editingVariantType) {
+        await api.updateVariantType(editingVariantType.id, values);
+        message.success('细分类型更新成功');
+      } else {
+        await api.createVariantType(values);
+        message.success('细分类型创建成功');
+      }
+      setVariantTypeModalVisible(false);
+      fetchVariantTypes();
+    } catch (error) {
+      console.error('细分类型操作失败:', error);
+      const errorMsg = error.response?.data?.error || error.response?.data?.errors?.[0]?.msg || '操作失败';
+      message.error(errorMsg);
+    }
+  };
+
+  const handleVariantOptionSubmit = async (values) => {
+    try {
+      if (editingVariantOption) {
+        await api.updateVariantOption(editingVariantOption.id, values);
+        message.success('细分选项更新成功');
+      } else {
+        await api.createVariantOption(values);
+        message.success('细分选项创建成功');
+      }
+      setVariantOptionModalVisible(false);
+      fetchVariantTypes();
+    } catch (error) {
+      console.error('细分选项操作失败:', error);
+      const errorMsg = error.response?.data?.error || error.response?.data?.errors?.[0]?.msg || '操作失败';
+      message.error(errorMsg);
+    }
+  };
+
+
+
+  const handleDeleteVariantType = (variantType) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除细分类型 "${variantType.display_name}" 吗？这将删除所有相关的选项和配置。`,
+      onOk: async () => {
+        try {
+          await api.deleteVariantType(variantType.id);
+          message.success('细分类型删除成功');
+          fetchVariantTypes();
+        } catch (error) {
+          message.error('删除失败');
+        }
+      },
+    });
+  };
+
+  const handleDeleteVariantOption = (option) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除选项 "${option.display_name}" 吗？如果有商品正在使用此选项，相关配置也会被移除。`,
+      okText: '确认删除',
+      cancelText: '取消',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          console.log('正在删除选项:', option);
+          await api.deleteVariantOption(option.id);
+          message.success('选项删除成功');
+          
+          // 刷新细分类型数据
+          await fetchVariantTypes();
+          
+          // 如果当前有商品细分配置模态框打开，也需要刷新商品配置
+          if (productVariantModalVisible && selectedProductForVariant) {
+            console.log('刷新商品细分配置...');
+            try {
+              const response = await api.getProductVariants(selectedProductForVariant.id);
+              const productVariants = response.data || [];
+              setProductVariantTypes(productVariants);
+            } catch (error) {
+              console.error('刷新商品细分配置失败:', error);
+            }
+          }
+        } catch (error) {
+          console.error('删除选项失败:', error);
+          const errorMsg = error.response?.data?.error || error.message || '删除失败';
+          message.error(errorMsg);
+        }
+      },
+    });
+  };
+
   // 管理员列表表格列
   const adminColumns = [
     {
@@ -1060,6 +1398,133 @@ const AdminPage = () => {
                         }}
                         scroll={{ x: 970 }}
                       />
+                    </div>
+                  )
+                },
+                {
+                  key: 'variants',
+                  label: (
+                    <span>
+                      <SettingOutlined style={{ marginRight: 8 }} />
+                      细分管理
+                    </span>
+                  ),
+                  children: (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                        <Title level={3} style={{ margin: 0 }}>
+                          商品细分类型管理
+                        </Title>
+                        <Button
+                          type="primary"
+                          icon={<PlusOutlined />}
+                          onClick={() => showVariantTypeModal()}
+                        >
+                          添加细分类型
+                        </Button>
+                      </div>
+
+                      <div style={{ marginBottom: 16 }}>
+                        <Text type="secondary">
+                          共 {(variantTypes || []).length} 个细分类型
+                        </Text>
+                      </div>
+
+                      {variantTypes.map(variantType => (
+                        <Card
+                          key={variantType.id}
+                          title={
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>
+                                <SettingOutlined style={{ marginRight: 8 }} />
+                                {variantType.display_name}
+                                {variantType.is_required && <Text style={{ color: '#f50', marginLeft: 8 }}>*必选</Text>}
+                              </span>
+                              <Space>
+                                <Button
+                                  size="small"
+                                  icon={<PlusOutlined />}
+                                  onClick={() => showVariantOptionModal(variantType)}
+                                >
+                                  添加选项
+                                </Button>
+                                <Button
+                                  size="small"
+                                  icon={<EditOutlined />}
+                                  onClick={() => showVariantTypeModal(variantType)}
+                                >
+                                  编辑
+                                </Button>
+                                <Button
+                                  size="small"
+                                  danger
+                                  icon={<DeleteOutlined />}
+                                  onClick={() => handleDeleteVariantType(variantType)}
+                                >
+                                  删除
+                                </Button>
+                              </Space>
+                            </div>
+                          }
+                          style={{ marginBottom: 16 }}
+                        >
+                          <div>
+                            <Text type="secondary">{variantType.description}</Text>
+                            <div style={{ marginTop: 12 }}>
+                              <Text strong>选项列表：</Text>
+                              <div style={{ marginTop: 8 }}>
+                                {variantType.options && variantType.options.length > 0 ? (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                    {variantType.options.map(option => (
+                                      <div key={option.id} style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        padding: '4px 8px', 
+                                        border: '1px solid #d9d9d9', 
+                                        borderRadius: 4,
+                                        marginBottom: 4
+                                      }}>
+                                        <span>{option.display_name}</span>
+                                        {option.price_adjustment !== 0 && (
+                                          <Text style={{ 
+                                            marginLeft: 4, 
+                                            color: option.price_adjustment > 0 ? '#f50' : '#52c41a' 
+                                          }}>
+                                            ({option.price_adjustment > 0 ? '+' : ''}¥{option.price_adjustment})
+                                          </Text>
+                                        )}
+                                        <Button
+                                          type="text"
+                                          size="small"
+                                          icon={<EditOutlined />}
+                                          onClick={() => showVariantOptionModal(variantType, option)}
+                                          style={{ marginLeft: 4, padding: 0, width: 16, height: 16 }}
+                                        />
+                                        <Button
+                                          type="text"
+                                          size="small"
+                                          danger
+                                          icon={<DeleteOutlined />}
+                                          onClick={() => handleDeleteVariantOption(option)}
+                                          style={{ marginLeft: 2, padding: 0, width: 16, height: 16 }}
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <Text type="secondary">暂无选项，请先添加选项</Text>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+
+                      {variantTypes.length === 0 && !variantTypeLoading && (
+                        <div style={{ textAlign: 'center', padding: '50px 0' }}>
+                          <Text type="secondary">暂无细分类型，请先添加细分类型</Text>
+                        </div>
+                      )}
                     </div>
                   )
                 },
@@ -1696,6 +2161,36 @@ const AdminPage = () => {
                         key: 'name'
                       },
                       {
+                        title: '细分配置',
+                        dataIndex: 'variant_selections',
+                        key: 'variant_selections',
+                        width: 200,
+                        render: (variantSelections) => {
+                          if (!variantSelections || Object.keys(variantSelections).length === 0) {
+                            return <Text type="secondary">无细分</Text>;
+                          }
+                          
+                          return (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {Object.values(variantSelections).map((selection, index) => (
+                                <Tag key={index} color="blue" style={{ margin: 0 }}>
+                                  {selection.type_display_name}: {selection.option_display_name}
+                                  {selection.price_adjustment !== 0 && (
+                                    <span style={{ 
+                                      marginLeft: 4, 
+                                      color: selection.price_adjustment > 0 ? '#f50' : '#52c41a',
+                                      fontSize: '11px'
+                                    }}>
+                                      ({selection.price_adjustment > 0 ? '+' : ''}¥{selection.price_adjustment.toFixed(2)})
+                                    </span>
+                                  )}
+                                </Tag>
+                              ))}
+                            </div>
+                          );
+                        }
+                      },
+                      {
                         title: '单价',
                         dataIndex: 'price',
                         key: 'price',
@@ -2187,10 +2682,451 @@ const AdminPage = () => {
               </div>
             </div>
           </Modal>
-        </div>
-      </Content>
-    </Layout>
-  );
-};
 
-export default AdminPage; 
+          {/* 细分类型管理模态框 */}
+          <Modal
+            title={editingVariantType ? '编辑细分类型' : '添加细分类型'}
+            open={variantTypeModalVisible}
+            onCancel={() => {
+              setVariantTypeModalVisible(false);
+              variantTypeForm.resetFields();
+            }}
+            footer={null}
+            width={600}
+          >
+            <Form
+              form={variantTypeForm}
+              layout="vertical"
+              onFinish={handleVariantTypeSubmit}
+            >
+              <Form.Item
+                label="类型名称"
+                name="display_name"
+                rules={[{ required: true, message: '请输入类型名称' }]}
+              >
+                <Input placeholder="如：温度、糖度、杯型等" />
+              </Form.Item>
+              <Form.Item
+                label="内部标识"
+                name="name"
+                rules={[
+                  { required: true, message: '请输入内部标识' },
+                  { pattern: /^[a-zA-Z_][a-zA-Z0-9_]*$/, message: '只能包含字母、数字和下划线，且以字母或下划线开头' }
+                ]}
+              >
+                <Input placeholder="如：temperature、sugar、size等" />
+              </Form.Item>
+              <Form.Item
+                label="描述"
+                name="description"
+              >
+                <Input.TextArea rows={3} placeholder="描述这个细分类型的用途" />
+              </Form.Item>
+              <Form.Item
+                name="is_required"
+                valuePropName="checked"
+              >
+                <Checkbox>必选项（客户必须选择此类型）</Checkbox>
+              </Form.Item>
+              <Form.Item
+                label="排序权重"
+                name="sort_order"
+                initialValue={0}
+              >
+                <InputNumber min={0} max={999} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item>
+                <Space>
+                  <Button type="primary" htmlType="submit">
+                    {editingVariantType ? '更新' : '创建'}
+                  </Button>
+                  <Button onClick={() => {
+                    setVariantTypeModalVisible(false);
+                    variantTypeForm.resetFields();
+                  }}>
+                    取消
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </Modal>
+
+          {/* 细分选项管理模态框 */}
+          <Modal
+            title={editingVariantOption ? '编辑选项' : '添加选项'}
+            open={variantOptionModalVisible}
+            onCancel={() => {
+              setVariantOptionModalVisible(false);
+              variantOptionForm.resetFields();
+            }}
+            footer={null}
+            width={600}
+          >
+            <Form
+              form={variantOptionForm}
+              layout="vertical"
+              onFinish={handleVariantOptionSubmit}
+            >
+              <Form.Item
+                label="选项名称"
+                name="display_name"
+                rules={[{ required: true, message: '请输入选项名称' }]}
+              >
+                <Input placeholder="如：热、冰、三分糖、大杯等" />
+              </Form.Item>
+              <Form.Item
+                label="内部标识"
+                name="name"
+                rules={[
+                  { required: true, message: '请输入内部标识' },
+                  { pattern: /^[a-zA-Z_][a-zA-Z0-9_]*$/, message: '只能包含字母、数字和下划线，且以字母或下划线开头' }
+                ]}
+              >
+                <Input placeholder="如：hot、ice、sugar_30、large等" />
+              </Form.Item>
+              <Form.Item
+                label="价格调整"
+                name="price_adjustment"
+                initialValue={0}
+                extra="正数表示加价，负数表示减价，0表示不调整价格"
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  precision={2}
+                  formatter={(value) => `¥ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  parser={(value) => value.replace(/¥\s?|(,*)/g, '')}
+                />
+              </Form.Item>
+              <Form.Item
+                label="排序权重"
+                name="sort_order"
+                initialValue={0}
+              >
+                <InputNumber min={0} max={999} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="variant_type_id" style={{ display: 'none' }}>
+                <Input type="hidden" />
+              </Form.Item>
+              <Form.Item>
+                <Space>
+                  <Button type="primary" htmlType="submit">
+                    {editingVariantOption ? '更新' : '创建'}
+                  </Button>
+                  <Button onClick={() => {
+                    setVariantOptionModalVisible(false);
+                    variantOptionForm.resetFields();
+                  }}>
+                    取消
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </Modal>
+
+          {/* 商品细分配置模态框 */}
+          <Modal
+            title={`配置商品细分 - ${selectedProductForVariant?.name}`}
+            open={productVariantModalVisible}
+            onCancel={() => {
+              setProductVariantModalVisible(false);
+              setProductVariantTypes([]);
+            }}
+            footer={[
+              <Button key="add" type="primary" onClick={showAddVariantModal}>
+                <PlusOutlined /> 添加细分类型
+              </Button>,
+              <Button key="close" onClick={() => {
+                setProductVariantModalVisible(false);
+                setProductVariantTypes([]);
+              }}>
+                关闭
+              </Button>
+            ]}
+            width={800}
+          >
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary">
+                为此商品配置细分类型。点击"添加细分类型"来为商品添加新的细分选项。
+              </Text>
+            </div>
+            
+            {productVariantTypes.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#999' }}>
+                <InboxOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+                <div>暂未配置任何细分类型</div>
+                <div style={{ marginTop: 8 }}>点击"添加细分类型"开始配置</div>
+              </div>
+            ) : (
+              productVariantTypes.map(variantType => (
+                <Card 
+                  key={variantType.id} 
+                  style={{ marginBottom: 16 }}
+                  actions={[
+                    <Button 
+                      type="text" 
+                      onClick={() => showOptionConfigModal(variantType)}
+                    >
+                      <SettingOutlined /> 配置选项
+                    </Button>,
+                    <Button 
+                      type="text" 
+                      onClick={() => {
+                        Modal.confirm({
+                          title: '编辑细分类型配置',
+                          content: (
+                            <div>
+                              <div style={{ marginBottom: 16 }}>
+                                <Checkbox 
+                                  checked={variantType.is_required}
+                                  onChange={(e) => {
+                                    handleUpdateProductVariant(variantType.id, {
+                                      is_required: e.target.checked,
+                                      sort_order: variantType.sort_order
+                                    });
+                                  }}
+                                >
+                                  此商品必须选择此类型
+                                </Checkbox>
+                              </div>
+                              <div>
+                                <Text>显示顺序：</Text>
+                                <InputNumber
+                                  min={0}
+                                  max={999}
+                                  value={variantType.sort_order}
+                                  onChange={(value) => {
+                                    handleUpdateProductVariant(variantType.id, {
+                                      is_required: variantType.is_required,
+                                      sort_order: value || 0
+                                    });
+                                  }}
+                                  style={{ width: 120, marginLeft: 8 }}
+                                />
+                              </div>
+                            </div>
+                          ),
+                          okText: '确定',
+                          cancelText: '取消',
+                        });
+                      }}
+                    >
+                      <EditOutlined /> 编辑配置
+                    </Button>,
+                    <Button
+                      type="text"
+                      danger
+                      onClick={() => handleRemoveVariantFromProduct(variantType.id)}
+                    >
+                      <DeleteOutlined /> 移除
+                    </Button>
+                  ]}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+                    <Title level={5} style={{ margin: 0 }}>{variantType.display_name}</Title>
+                    {variantType.is_required && (
+                      <Tag color="red" style={{ marginLeft: 8 }}>必选</Tag>
+                    )}
+                    <Tag color="blue" style={{ marginLeft: 8 }}>排序: {variantType.sort_order}</Tag>
+                  </div>
+                  
+                  {variantType.description && (
+                    <div style={{ marginBottom: 12, color: '#666' }}>
+                      {variantType.description}
+                    </div>
+                  )}
+                  
+                  <div>
+                    <Text type="secondary">可用选项：</Text>
+                    <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {variantType.options?.map(option => (
+                        <Tag key={option.id} color="blue">
+                          {option.display_name}
+                          {option.price_adjustment !== 0 && (
+                            <Text style={{ marginLeft: 4 }}>
+                              ({option.price_adjustment > 0 ? '+' : ''}¥{option.price_adjustment})
+                            </Text>
+                          )}
+                        </Tag>
+                      )) || <Text type="secondary">暂无选项</Text>}
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
+          </Modal>
+
+          {/* 添加细分类型到商品模态框 */}
+          <Modal
+            title="为商品添加细分类型"
+            open={addVariantModalVisible}
+            onCancel={() => {
+              setAddVariantModalVisible(false);
+              addVariantForm.resetFields();
+            }}
+            footer={null}
+            width={600}
+          >
+            <Form
+              form={addVariantForm}
+              layout="vertical"
+              onFinish={handleAddVariantToProduct}
+            >
+              <Form.Item
+                label="选择细分类型"
+                name="variant_type_id"
+                rules={[{ required: true, message: '请选择细分类型' }]}
+                extra={`当前共有 ${variantTypes?.length || 0} 个细分类型，其中 ${variantTypes?.filter(vt => !productVariantTypes.some(pvt => pvt.id === vt.id))?.length || 0} 个可添加`}
+              >
+                <Select 
+                  placeholder={variantTypes?.length === 0 ? "请先在细分管理中创建细分类型" : "选择要添加的细分类型"}
+                  onChange={handleVariantTypeChange}
+                  notFoundContent={variantTypes?.length === 0 ? "暂无可用的细分类型" : "暂无可添加的细分类型"}
+                >
+                  {variantTypes
+                    .filter(vt => !productVariantTypes.some(pvt => pvt.id === vt.id))
+                    .map(variantType => (
+                      <Select.Option key={variantType.id} value={variantType.id}>
+                        <div>
+                          <div style={{ fontWeight: 'bold' }}>{variantType.display_name}</div>
+                          {variantType.description && (
+                            <div style={{ fontSize: '12px', color: '#666' }}>{variantType.description}</div>
+                          )}
+                          <div style={{ fontSize: '12px', color: '#999' }}>
+                            {variantType.options?.length || 0} 个选项
+                          </div>
+                        </div>
+                      </Select.Option>
+                    ))}
+                </Select>
+              </Form.Item>
+              
+              {selectedVariantTypeOptions.length > 0 && (
+                <Form.Item
+                  label="启用的选项"
+                  name="enabled_options"
+                  extra="选择该商品可以使用的选项。如果不选择任何选项，将启用所有选项。"
+                >
+                  <Checkbox.Group style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {selectedVariantTypeOptions.map(option => (
+                        <Checkbox 
+                          key={option.id} 
+                          value={option.id}
+                          style={{ width: '100%' }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                            <span>{option.display_name}</span>
+                            {option.price_adjustment !== 0 && (
+                              <Text style={{ color: option.price_adjustment > 0 ? '#f50' : '#52c41a', fontSize: '12px' }}>
+                                {option.price_adjustment > 0 ? '+' : ''}¥{option.price_adjustment.toFixed(2)}
+                              </Text>
+                            )}
+                          </div>
+                        </Checkbox>
+                      ))}
+                    </div>
+                  </Checkbox.Group>
+                </Form.Item>
+              )}
+              
+              <Form.Item
+                name="is_required"
+                valuePropName="checked"
+              >
+                <Checkbox>此商品必须选择此类型</Checkbox>
+              </Form.Item>
+              
+              <Form.Item
+                label="显示顺序"
+                name="sort_order"
+                initialValue={0}
+              >
+                <InputNumber min={0} max={999} style={{ width: '100%' }} />
+              </Form.Item>
+              
+              <Form.Item>
+                <Space>
+                  <Button type="primary" htmlType="submit">
+                    添加
+                  </Button>
+                  <Button onClick={() => {
+                    setAddVariantModalVisible(false);
+                    addVariantForm.resetFields();
+                  }}>
+                    取消
+                  </Button>
+                </Space>
+              </Form.Item>
+                          </Form>
+            </Modal>
+
+            {/* 选项配置模态框 */}
+            <Modal
+              title={`配置选项 - ${currentVariantType?.display_name}`}
+              open={optionConfigModalVisible}
+              onCancel={() => {
+                setOptionConfigModalVisible(false);
+                optionConfigForm.resetFields();
+              }}
+              footer={null}
+              width={600}
+            >
+              <Form
+                form={optionConfigForm}
+                layout="vertical"
+                onFinish={handleOptionConfigSubmit}
+              >
+                <div style={{ marginBottom: 16 }}>
+                  <Text type="secondary">
+                    选择此商品在该细分类型下可以使用的选项。如果不选择任何选项，将启用所有选项。
+                  </Text>
+                </div>
+                
+                <Form.Item
+                  label="启用的选项"
+                  name="enabled_options"
+                >
+                  <Checkbox.Group style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {currentVariantOptions?.map(option => (
+                        <Checkbox 
+                          key={option.id} 
+                          value={option.id}
+                          style={{ width: '100%' }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                            <span>{option.display_name}</span>
+                            {option.price_adjustment !== 0 && (
+                              <Text style={{ color: option.price_adjustment > 0 ? '#f50' : '#52c41a', fontSize: '12px' }}>
+                                {option.price_adjustment > 0 ? '+' : ''}¥{option.price_adjustment.toFixed(2)}
+                              </Text>
+                            )}
+                          </div>
+                        </Checkbox>
+                      )) || <Text type="secondary">暂无可用选项</Text>}
+                    </div>
+                  </Checkbox.Group>
+                </Form.Item>
+                
+                <Form.Item>
+                  <Space>
+                    <Button type="primary" htmlType="submit">
+                      保存配置
+                    </Button>
+                    <Button onClick={() => {
+                      setOptionConfigModalVisible(false);
+                      optionConfigForm.resetFields();
+                    }}>
+                      取消
+                    </Button>
+                  </Space>
+                </Form.Item>
+              </Form>
+            </Modal>
+          </div>
+        </Content>
+      </Layout>
+    );
+  };
+
+  export default AdminPage; 

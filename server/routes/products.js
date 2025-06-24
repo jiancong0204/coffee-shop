@@ -42,7 +42,113 @@ router.get('/', (req, res) => {
             console.error(`[PUBLIC API] Error fetching tags for product ${product.id} (${product.name}):`, err);
             reject(err);
           } else {
-            resolve({ ...product, tags });
+            // 获取商品的细分类型
+            const variantSql = `
+              SELECT 
+                vt.*,
+                ptr.is_required as product_required,
+                ptr.sort_order as product_sort_order
+              FROM product_variant_types vt
+              JOIN product_variant_type_relations ptr ON vt.id = ptr.variant_type_id
+              WHERE ptr.product_id = ?
+              ORDER BY ptr.sort_order, vt.sort_order, vt.display_name
+            `;
+            
+            db.all(variantSql, [product.id], (err, variantTypes) => {
+              if (err) {
+                console.error(`[PUBLIC API] Error fetching variant types for product ${product.id}:`, err);
+                reject(err);
+              } else {
+                // 为每个细分类型获取选项（只返回该商品启用的选项）
+                const variantPromises = variantTypes.map(variantType => {
+                  return new Promise((variantResolve, variantReject) => {
+                    // 首先检查是否为该商品配置了具体的选项关系
+                    const checkConfigSql = `
+                      SELECT COUNT(*) as count 
+                      FROM product_variant_option_relations 
+                      WHERE product_id = ? AND variant_type_id = ?
+                    `;
+                    
+                    db.get(checkConfigSql, [product.id, variantType.id], (err, result) => {
+                      if (err) {
+                        variantReject(err);
+                        return;
+                      }
+                      
+                      if (result.count === 0) {
+                        // 没有配置具体选项，返回该类型的所有选项
+                        const allOptionsSql = `
+                          SELECT * FROM product_variant_options 
+                          WHERE variant_type_id = ? AND available = true
+                          ORDER BY sort_order, display_name
+                        `;
+                        
+                        db.all(allOptionsSql, [variantType.id], (err, allOptions) => {
+                          if (err) {
+                            variantReject(err);
+                          } else {
+                            variantResolve({
+                              ...variantType,
+                              is_required: Boolean(variantType.product_required),
+                              sort_order: variantType.product_sort_order,
+                              options: allOptions.map(option => ({
+                                ...option,
+                                available: Boolean(option.available)
+                              }))
+                            });
+                          }
+                        });
+                      } else {
+                        // 已配置具体选项，只返回启用的选项
+                        const optionSql = `
+                          SELECT 
+                            vo.*,
+                            por.enabled as product_enabled,
+                            por.sort_order as product_sort_order
+                          FROM product_variant_options vo
+                          INNER JOIN product_variant_option_relations por 
+                            ON vo.id = por.variant_option_id 
+                            AND por.product_id = ? 
+                            AND por.variant_type_id = ?
+                          WHERE vo.variant_type_id = ? AND vo.available = true
+                          AND por.enabled = true
+                          ORDER BY COALESCE(por.sort_order, vo.sort_order), vo.display_name
+                        `;
+                        
+                        db.all(optionSql, [product.id, variantType.id, variantType.id], (err, options) => {
+                          if (err) {
+                            variantReject(err);
+                          } else {
+                            variantResolve({
+                              ...variantType,
+                              is_required: Boolean(variantType.product_required),
+                              sort_order: variantType.product_sort_order,
+                              options: options.map(option => ({
+                                ...option,
+                                available: Boolean(option.available)
+                              }))
+                            });
+                          }
+                        });
+                      }
+                    });
+                  });
+                });
+                
+                if (variantPromises.length === 0) {
+                  resolve({ ...product, tags, variantTypes: [] });
+                } else {
+                  Promise.all(variantPromises)
+                    .then(variantTypesWithOptions => {
+                      resolve({ ...product, tags, variantTypes: variantTypesWithOptions });
+                    })
+                    .catch(variantErr => {
+                      console.error(`[PUBLIC API] Error fetching variant options for product ${product.id}:`, variantErr);
+                      resolve({ ...product, tags, variantTypes: [] });
+                    });
+                }
+              }
+            });
           }
         });
       });
@@ -102,7 +208,76 @@ router.get('/admin/all', authenticateToken, requireAdmin, (req, res) => {
             console.error(`[ADMIN API] Error fetching tags for product ${product.id} (${product.name}):`, err);
             reject(err);
           } else {
-            resolve({ ...product, tags });
+            // 获取商品的细分类型
+            const variantSql = `
+              SELECT 
+                vt.*,
+                ptr.is_required as product_required,
+                ptr.sort_order as product_sort_order
+              FROM product_variant_types vt
+              JOIN product_variant_type_relations ptr ON vt.id = ptr.variant_type_id
+              WHERE ptr.product_id = ?
+              ORDER BY ptr.sort_order, vt.sort_order, vt.display_name
+            `;
+            
+            db.all(variantSql, [product.id], (err, variantTypes) => {
+              if (err) {
+                console.error(`[ADMIN API] Error fetching variant types for product ${product.id}:`, err);
+                reject(err);
+              } else {
+                // 为每个细分类型获取选项（管理员API，显示所有选项但标记启用状态）
+                const variantPromises = variantTypes.map(variantType => {
+                  return new Promise((variantResolve, variantReject) => {
+                    const optionSql = `
+                      SELECT 
+                        vo.*,
+                        por.enabled as product_enabled
+                      FROM product_variant_options vo
+                      LEFT JOIN product_variant_option_relations por 
+                        ON vo.id = por.variant_option_id 
+                        AND por.product_id = ? 
+                        AND por.variant_type_id = ?
+                      WHERE vo.variant_type_id = ? AND vo.available = true
+                      ORDER BY vo.sort_order, vo.display_name
+                    `;
+                    
+                    db.all(optionSql, [product.id, variantType.id, variantType.id], (err, options) => {
+                      if (err) {
+                        variantReject(err);
+                      } else {
+                        // 检查是否有任何选项配置记录
+                        const hasConfig = options.some(option => option.product_enabled !== null);
+                        
+                        variantResolve({
+                          ...variantType,
+                          is_required: Boolean(variantType.product_required),
+                          sort_order: variantType.product_sort_order,
+                          options: options.map(option => ({
+                            ...option,
+                            available: Boolean(option.available),
+                            // 如果没有配置记录，默认为true；如果有配置记录，则使用配置的值
+                            product_enabled: hasConfig ? Boolean(option.product_enabled) : true
+                          }))
+                        });
+                      }
+                    });
+                  });
+                });
+                
+                if (variantPromises.length === 0) {
+                  resolve({ ...product, tags, variantTypes: [] });
+                } else {
+                  Promise.all(variantPromises)
+                    .then(variantTypesWithOptions => {
+                      resolve({ ...product, tags, variantTypes: variantTypesWithOptions });
+                    })
+                    .catch(variantErr => {
+                      console.error(`[ADMIN API] Error fetching variant options for product ${product.id}:`, variantErr);
+                      resolve({ ...product, tags, variantTypes: [] });
+                    });
+                }
+              }
+            });
           }
         });
       });
