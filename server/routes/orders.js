@@ -298,6 +298,90 @@ router.get('/:order_id', authenticateToken, (req, res) => {
   );
 });
 
+// 用户取消订单
+router.put('/:order_id/cancel', authenticateToken, (req, res) => {
+  const userId = req.user.id;
+  const { order_id } = req.params;
+
+  // 获取订单信息，验证订单归属和状态
+  db.get(
+    'SELECT * FROM orders WHERE id = ? AND user_id = ?',
+    [order_id, userId],
+    (err, order) => {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: '服务器错误' });
+      }
+
+      if (!order) {
+        return res.status(404).json({ error: '订单不存在或无权限' });
+      }
+
+      // 只有待接单状态的订单才能被用户取消
+      if (order.status !== 'pending') {
+        return res.status(400).json({ error: '订单已被接单，无法取消' });
+      }
+
+      // 获取订单商品详情以恢复库存
+      db.all(
+        'SELECT product_id, quantity FROM order_items WHERE order_id = ?',
+        [order_id],
+        (err, orderItems) => {
+          if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: '服务器错误' });
+          }
+
+          // 恢复库存
+          let itemsProcessed = 0;
+          let hasError = false;
+
+          if (orderItems.length === 0) {
+            // 如果没有商品，直接更新状态
+            updateOrderStatus();
+            return;
+          }
+
+          const productRoutes = require('./products');
+          
+          orderItems.forEach(item => {
+            if (hasError) return;
+
+            productRoutes.increaseStock(item.product_id, item.quantity, (err, result) => {
+              if (err) {
+                console.error('Error restoring stock:', err);
+                hasError = true;
+                return res.status(500).json({ error: '恢复库存失败' });
+              }
+
+              itemsProcessed++;
+              if (itemsProcessed === orderItems.length) {
+                console.log(`用户取消订单 ${order_id}，已恢复相关商品库存`);
+                updateOrderStatus();
+              }
+            });
+          });
+
+          function updateOrderStatus() {
+            db.run(
+              'UPDATE orders SET status = ? WHERE id = ?',
+              ['cancelled', order_id],
+              function(err) {
+                if (err) {
+                  console.error('Database error:', err);
+                  return res.status(500).json({ error: '服务器错误' });
+                }
+
+                res.json({ message: '订单已取消，库存已恢复' });
+              }
+            );
+          }
+        }
+      );
+    }
+  );
+});
+
 // 获取所有订单（仅管理员）
 router.get('/', authenticateToken, requireAdmin, (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;

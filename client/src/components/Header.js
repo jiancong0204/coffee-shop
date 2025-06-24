@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useCart } from '../contexts/CartContext';
 import api from '../services/api';
 
 const { Header: AntHeader } = Layout;
@@ -18,23 +19,7 @@ const Header = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isLoggedIn, isAdmin, logout } = useAuth();
-  const [cartCount, setCartCount] = useState(0);
-
-  // 获取购物车数量
-  const fetchCartCount = async () => {
-    if (isLoggedIn() && !isAdmin()) {
-      try {
-        const response = await api.getCart();
-        setCartCount(response.data.itemCount || 0);
-      } catch (error) {
-        console.error('获取购物车失败:', error);
-      }
-    }
-  };
-
-  useEffect(() => {
-    fetchCartCount();
-  }, [user, location.pathname]);
+  const { cartCount } = useCart();
 
   const handleLogout = () => {
     logout();

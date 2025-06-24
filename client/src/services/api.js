@@ -204,6 +204,11 @@ class ApiService {
     return this.put(`/orders/${orderId}/status`, { status });
   }
 
+  // 用户取消订单
+  cancelOrder(orderId) {
+    return this.put(`/orders/${orderId}/cancel`);
+  }
+
   // 管理员管理相关API
   changeAdminPassword(currentPassword, newPassword) {
     return this.put('/auth/admin/change-password', { currentPassword, newPassword });

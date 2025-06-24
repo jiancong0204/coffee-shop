@@ -225,7 +225,7 @@ const LoginPage = () => {
           ]}
           centered
           width={400}
-          destroyOnClose={false}
+          destroyOnHidden={false}
         >
           <div style={{ padding: '16px 0', textAlign: 'center' }}>
             <p style={{ fontSize: 16, margin: 0, color: '#666' }}>

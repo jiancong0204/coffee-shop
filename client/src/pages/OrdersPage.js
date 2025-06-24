@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Card, List, Typography, Tag, Empty, message } from 'antd';
-import { HistoryOutlined } from '@ant-design/icons';
+import { Layout, Card, List, Typography, Tag, Empty, message, Button, Popconfirm, Space } from 'antd';
+import { HistoryOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -35,10 +35,10 @@ const OrdersPage = () => {
 
   const getStatusTag = (status) => {
     const statusMap = {
-      'pending': { color: 'orange', text: '待处理' },
+      'pending': { color: 'orange', text: '待接单' },
       'preparing': { color: 'blue', text: '制作中' },
-      'ready': { color: 'green', text: '已完成' },
-      'completed': { color: 'gray', text: '已取餐' },
+      'ready': { color: 'green', text: '待取餐' },
+      'completed': { color: 'gray', text: '已完成' },
       'cancelled': { color: 'red', text: '已取消' }
     };
     const config = statusMap[status] || { color: 'default', text: status };
@@ -47,6 +47,17 @@ const OrdersPage = () => {
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString('zh-CN');
+  };
+
+  const handleCancelOrder = async (orderId) => {
+    try {
+      await api.cancelOrder(orderId);
+      message.success('订单已取消');
+      // 重新获取订单列表
+      fetchOrders();
+    } catch (error) {
+      message.error(error.response?.data?.error || '取消订单失败');
+    }
   };
 
   if (loading) {
@@ -102,9 +113,28 @@ const OrdersPage = () => {
                   
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Text type="secondary">共 {order.item_count} 件商品</Text>
-                    <Text strong style={{ fontSize: '16px', color: '#ff4d4f' }}>
-                      ¥{order.total_amount}
-                    </Text>
+                    <Space>
+                      <Text strong style={{ fontSize: '16px', color: '#ff4d4f' }}>
+                        ¥{order.total_amount}
+                      </Text>
+                      {order.status === 'pending' && (
+                        <Popconfirm
+                          title="确定要取消这个订单吗？"
+                          description="取消后商品库存将自动恢复"
+                          onConfirm={() => handleCancelOrder(order.id)}
+                          okText="确定取消"
+                          cancelText="不取消"
+                        >
+                          <Button 
+                            danger 
+                            size="small" 
+                            icon={<CloseCircleOutlined />}
+                          >
+                            取消订单
+                          </Button>
+                        </Popconfirm>
+                      )}
+                    </Space>
                   </div>
                 </Card>
               )}

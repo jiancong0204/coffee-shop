@@ -3,6 +3,7 @@ import { Layout, Card, Button, List, InputNumber, Typography, Space, Empty, mess
 import { DeleteOutlined, ShoppingCartOutlined, CheckCircleOutlined, PlusOutlined, MinusOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useCart } from '../contexts/CartContext';
 import api from '../services/api';
 
 const { Content } = Layout;
@@ -12,8 +13,9 @@ const CartPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isLoggedIn, isAdmin } = useAuth();
+  const { cartItems, cartCount, loading, updating, updateCartItem, removeFromCart, fetchCart, clearCart } = useCart();
   const [cart, setCart] = useState({ items: [], totalAmount: 0, itemCount: 0 });
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [newOrder, setNewOrder] = useState(null);
@@ -24,7 +26,7 @@ const CartPage = () => {
       navigate('/');
       return;
     }
-    fetchCart();
+    fetchCartData();
     
     // 处理从主页跳转过来的高亮
     if (location.state?.highlightProductId) {
@@ -36,38 +38,42 @@ const CartPage = () => {
     }
   }, [isLoggedIn, isAdmin, navigate, location.state]);
 
-  const fetchCart = async () => {
+  // 当CartContext中的数据变化时，同步更新本地状态
+  useEffect(() => {
+    fetchCartData();
+  }, [cartItems]);
+
+  const fetchCartData = async () => {
     try {
       const response = await api.getCart();
       setCart(response.data);
     } catch (error) {
       message.error('获取购物车失败');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
   };
 
   const updateQuantity = async (cartId, quantity) => {
-    try {
-      await api.updateCartItem(cartId, quantity);
-      fetchCart();
-    } catch (error) {
-      message.error('更新数量失败');
+    const result = await updateCartItem(cartId, quantity);
+    if (!result.success) {
+      message.error(result.error || '更新数量失败');
     }
+    // 购物车数据已通过乐观更新处理，无需手动刷新
   };
 
   const removeItem = async (cartId) => {
-    try {
-      await api.removeFromCart(cartId);
+    const result = await removeFromCart(cartId);
+    if (result.success) {
       message.success('商品已删除');
-      fetchCart();
-    } catch (error) {
-      message.error('删除失败');
+    } else {
+      message.error(result.error || '删除失败');
     }
+    // 购物车数据已通过乐观更新处理，无需手动刷新
   };
 
   const checkout = async () => {
-    if (cart.items.length === 0) {
+    if (cartItems.length === 0) {
       message.warning('购物车为空');
       return;
     }
@@ -77,7 +83,8 @@ const CartPage = () => {
       const response = await api.checkout();
       setNewOrder(response.data.order);
       setOrderSuccess(true);
-      fetchCart(); // 刷新购物车
+      fetchCart(); // 刷新购物车上下文
+      fetchCartData(); // 刷新本地购物车数据
     } catch (error) {
       message.error('结账失败');
     } finally {
@@ -142,7 +149,7 @@ const CartPage = () => {
     );
   };
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <Layout style={{ minHeight: '100vh' }}>
         <Content style={{ padding: '24px 0' }}>
@@ -164,7 +171,7 @@ const CartPage = () => {
             <ShoppingCartOutlined /> 购物车
           </Title>
 
-          {cart.items.length === 0 ? (
+          {cartItems.length === 0 ? (
             <Card>
               <Empty
                 description="购物车为空"
@@ -178,7 +185,7 @@ const CartPage = () => {
           ) : (
             <Card>
               <List
-                dataSource={cart.items}
+                dataSource={cartItems}
                 renderItem={(item) => (
                   <List.Item
                     style={{
@@ -196,7 +203,8 @@ const CartPage = () => {
                             icon={<MinusOutlined />}
                             size="small"
                             onClick={() => updateQuantity(item.cart_id, Math.max(1, item.quantity - 1))}
-                            disabled={item.quantity <= 1}
+                            disabled={item.quantity <= 1 || updating}
+                            loading={updating}
                           />
                           <Button size="small" style={{ minWidth: '40px' }}>
                             {item.quantity}
@@ -205,7 +213,8 @@ const CartPage = () => {
                             icon={<PlusOutlined />}
                             size="small"
                             onClick={() => updateQuantity(item.cart_id, Math.min(99, item.quantity + 1))}
-                            disabled={item.quantity >= 99}
+                            disabled={item.quantity >= 99 || updating}
+                            loading={updating}
                           />
                         </Space.Compact>
                         <Button
@@ -213,6 +222,8 @@ const CartPage = () => {
                           danger
                           icon={<DeleteOutlined />}
                           onClick={() => removeItem(item.cart_id)}
+                          disabled={updating}
+                          loading={updating}
                         />
                       </Space>
                     ]}
@@ -258,14 +269,27 @@ const CartPage = () => {
                   <Button onClick={() => navigate('/')}>
                     继续购物
                   </Button>
-                  <Button danger onClick={() => api.clearCart().then(fetchCart)}>
+                  <Button 
+                    danger 
+                    disabled={updating}
+                    loading={updating}
+                    onClick={async () => {
+                      const result = await clearCart();
+                      if (result.success) {
+                        message.success('购物车已清空');
+                      } else {
+                        message.error(result.error || '清空购物车失败');
+                      }
+                      // 购物车数据已通过乐观更新处理，无需手动刷新
+                    }}
+                  >
                     清空购物车
                   </Button>
                 </Space>
                 
                 <Space size="large">
                   <Text strong style={{ fontSize: '18px' }}>
-                    总计: ¥{cart.totalAmount.toFixed(2)}
+                    总计: ¥{cart.totalAmount?.toFixed(2) || '0.00'}
                   </Text>
                   <Button
                     type="primary"

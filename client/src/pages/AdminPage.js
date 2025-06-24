@@ -56,6 +56,9 @@ const AdminPage = () => {
   const [variantOptionForm] = Form.useForm();
   const [productVariantForm] = Form.useForm();
   const [addVariantForm] = Form.useForm();
+  const [editVariantConfigModalVisible, setEditVariantConfigModalVisible] = useState(false); // 编辑细分配置模态框
+  const [editingVariantConfig, setEditingVariantConfig] = useState(null); // 当前编辑的细分配置
+  const [variantConfigForm] = Form.useForm(); // 细分配置表单
   const [historyOrderPagination, setHistoryOrderPagination] = useState({
     current: 1,
     pageSize: 20,
@@ -949,6 +952,29 @@ const AdminPage = () => {
       setProductVariantTypes(response.data || []);
     } catch (error) {
       message.error('更新失败');
+    }
+  };
+
+  // 显示编辑细分配置模态框
+  const showEditVariantConfigModal = (variantType) => {
+    setEditingVariantConfig(variantType);
+    setEditVariantConfigModalVisible(true);
+    // 设置表单默认值
+    variantConfigForm.setFieldsValue({
+      is_required: variantType.is_required,
+      sort_order: variantType.sort_order
+    });
+  };
+
+  // 处理细分配置提交
+  const handleVariantConfigSubmit = async (values) => {
+    try {
+      await handleUpdateProductVariant(editingVariantConfig.id, values);
+      setEditVariantConfigModalVisible(false);
+      variantConfigForm.resetFields();
+      setEditingVariantConfig(null);
+    } catch (error) {
+      // 错误处理已在 handleUpdateProductVariant 中进行
     }
   };
 
@@ -2870,45 +2896,7 @@ const AdminPage = () => {
                     </Button>,
                     <Button 
                       type="text" 
-                      onClick={() => {
-                        Modal.confirm({
-                          title: '编辑细分类型配置',
-                          content: (
-                            <div>
-                              <div style={{ marginBottom: 16 }}>
-                                <Checkbox 
-                                  checked={variantType.is_required}
-                                  onChange={(e) => {
-                                    handleUpdateProductVariant(variantType.id, {
-                                      is_required: e.target.checked,
-                                      sort_order: variantType.sort_order
-                                    });
-                                  }}
-                                >
-                                  此商品必须选择此类型
-                                </Checkbox>
-                              </div>
-                              <div>
-                                <Text>显示顺序：</Text>
-                                <InputNumber
-                                  min={0}
-                                  max={999}
-                                  value={variantType.sort_order}
-                                  onChange={(value) => {
-                                    handleUpdateProductVariant(variantType.id, {
-                                      is_required: variantType.is_required,
-                                      sort_order: value || 0
-                                    });
-                                  }}
-                                  style={{ width: 120, marginLeft: 8 }}
-                                />
-                              </div>
-                            </div>
-                          ),
-                          okText: '确定',
-                          cancelText: '取消',
-                        });
-                      }}
+                      onClick={() => showEditVariantConfigModal(variantType)}
                     >
                       <EditOutlined /> 编辑配置
                     </Button>,
@@ -3058,6 +3046,61 @@ const AdminPage = () => {
                 </Space>
               </Form.Item>
                           </Form>
+            </Modal>
+
+            {/* 编辑细分配置模态框 */}
+            <Modal
+              title={`编辑细分配置 - ${editingVariantConfig?.display_name}`}
+              open={editVariantConfigModalVisible}
+              onCancel={() => {
+                setEditVariantConfigModalVisible(false);
+                variantConfigForm.resetFields();
+                setEditingVariantConfig(null);
+              }}
+              footer={null}
+              width={500}
+            >
+              <Form
+                form={variantConfigForm}
+                layout="vertical"
+                onFinish={handleVariantConfigSubmit}
+              >
+                <div style={{ marginBottom: 16 }}>
+                  <Text type="secondary">
+                    配置此商品使用该细分类型的具体设置。
+                  </Text>
+                </div>
+
+                <Form.Item
+                  name="is_required"
+                  valuePropName="checked"
+                >
+                  <Checkbox>此商品必须选择此类型</Checkbox>
+                </Form.Item>
+                
+                <Form.Item
+                  label="显示顺序"
+                  name="sort_order"
+                  extra="数值越小排序越靠前"
+                >
+                  <InputNumber min={0} max={999} style={{ width: '100%' }} />
+                </Form.Item>
+                
+                <Form.Item>
+                  <Space>
+                    <Button type="primary" htmlType="submit">
+                      保存配置
+                    </Button>
+                    <Button onClick={() => {
+                      setEditVariantConfigModalVisible(false);
+                      variantConfigForm.resetFields();
+                      setEditingVariantConfig(null);
+                    }}>
+                      取消
+                    </Button>
+                  </Space>
+                </Form.Item>
+              </Form>
             </Modal>
 
             {/* 选项配置模态框 */}

@@ -3,6 +3,7 @@ import { Layout, Card, Button, Tabs, Typography, Row, Col, message, Image, Modal
 import { PlusOutlined, MinusOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useCart } from '../contexts/CartContext';
 import api from '../services/api';
 import pinyin from 'pinyin';
 import ProductVariantSelector from '../components/ProductVariantSelector';
@@ -10,15 +11,32 @@ import ProductVariantSelector from '../components/ProductVariantSelector';
 const { Content } = Layout;
 const { Title, Text } = Typography;
 
-function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpdateCart, cartItems, navigate }) {
+function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
   const [isUpdating, setIsUpdating] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [variantSelectorVisible, setVariantSelectorVisible] = useState(false);
+  const { cartItems, addToCart, updateCartItem, removeFromCart, getProductQuantity, hasMultipleConfigurations } = useCart();
 
   const onAddToCart = async (productId, variantSelections, quantity = 1) => {
+    if (!isLoggedIn) {
+      message.warning('请先登录');
+      navigate('/login');
+      return;
+    }
+
+    if (isAdmin) {
+      message.warning('管理员账号无法购买商品');
+      return;
+    }
+
     setIsUpdating(productId);
     try {
-      await handleAddToCart(productId, quantity, variantSelections);
+      const result = await addToCart(productId, quantity, variantSelections);
+      if (result.success) {
+        message.success('已添加到购物车');
+      } else {
+        message.error(result.error || '添加到购物车失败');
+      }
     } finally {
       setIsUpdating(null);
     }
@@ -53,19 +71,50 @@ function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpd
   };
 
   const onUpdateQuantity = async (productId, newQuantity) => {
+    if (!isLoggedIn) {
+      message.warning('请先登录');
+      navigate('/login');
+      return;
+    }
+
+    if (isAdmin) {
+      message.warning('管理员账号无法购买商品');
+      return;
+    }
+
     setIsUpdating(productId);
     try {
-      await handleUpdateCart(productId, newQuantity);
+      // 找到对应的购物车项（如果有多个配置，取第一个）
+      const cartItem = cartItems.find(item => item.product_id === productId);
+      if (!cartItem) {
+        message.error('购物车项不存在');
+        return;
+      }
+
+      let result;
+      if (newQuantity <= 0) {
+        // 删除购物车项
+        result = await removeFromCart(cartItem.cart_id);
+        if (result.success) {
+          message.success('已从购物车移除');
+        } else {
+          message.error(result.error || '移除失败');
+        }
+      } else {
+        // 更新数量
+        result = await updateCartItem(cartItem.cart_id, newQuantity);
+        if (result.success) {
+          message.success('购物车已更新');
+        } else {
+          message.error(result.error || '更新失败');
+        }
+      }
     } finally {
       setIsUpdating(null);
     }
   };
 
-  // 检查商品是否有多种配置
-  const hasMultipleConfigurations = (productId) => {
-    const productItems = cartItems.filter(item => item.product_id === productId);
-    return productItems.length > 1;
-  };
+
 
   // 处理减少数量
   const handleDecreaseQuantity = (product) => {
@@ -83,31 +132,15 @@ function ProductList({ products, isAdmin, isLoggedIn, handleAddToCart, handleUpd
       });
     } else {
       // 只有一种配置，直接减少
-      const quantity = getCartQuantity(product.id);
+      const quantity = getProductQuantity(product.id);
       onUpdateQuantity(product.id, quantity - 1);
     }
   };
 
-  const getCartQuantity = (productId, variantSelections = {}) => {
-    // 如果没有细分选择，就按原有逻辑获取该商品的总数量
-    if (!variantSelections || Object.keys(variantSelections).length === 0) {
-      // 返回该商品所有配置的总数量
-      return cartItems
-        .filter(item => item.product_id === productId)
-        .reduce((total, item) => total + item.quantity, 0);
-    }
-    
-    // 如果有细分选择，需要找到完全匹配的项目
-    const variantSelectionsStr = JSON.stringify(variantSelections);
-    const cartItem = cartItems.find(item => 
-      item.product_id === productId && 
-      JSON.stringify(item.variant_selections || {}) === variantSelectionsStr
-    );
-    return cartItem ? cartItem.quantity : 0;
-  };
+
 
   const renderCartButton = (product) => {
-    const quantity = getCartQuantity(product.id);
+    const quantity = getProductQuantity(product.id);
     const isLoading = isUpdating === product.id;
     
     // 检查库存状态
@@ -369,23 +402,13 @@ const HomePage = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [cartItems, setCartItems] = useState([]);
 
   useEffect(() => {
     fetchProducts();
     fetchCategories();
-    if (isLoggedIn() && !isAdmin()) {
-      fetchCart();
-    }
   }, []);
 
-  useEffect(() => {
-    if (isLoggedIn() && !isAdmin()) {
-      fetchCart();
-    } else {
-      setCartItems([]);
-    }
-  }, [isLoggedIn, isAdmin]);
+
 
   const fetchProducts = async (category = null) => {
     try {
@@ -415,71 +438,7 @@ const HomePage = () => {
     fetchProducts(category === 'all' ? null : category);
   };
 
-  const fetchCart = async () => {
-    try {
-      const response = await api.getCart();
-      setCartItems(response.data.items || []);
-    } catch (error) {
-      console.error('获取购物车失败:', error);
-    }
-  };
 
-  const handleAddToCart = async (productId, quantity = 1, variantSelections = {}) => {
-    if (!isLoggedIn()) {
-      message.warning('请先登录');
-      navigate('/login');
-      return;
-    }
-
-    if (isAdmin()) {
-      message.warning('管理员账号无法购买商品');
-      return;
-    }
-
-    try {
-      await api.addToCart(productId, quantity, variantSelections);
-      message.success('已添加到购物车');
-      fetchCart(); // 刷新购物车
-    } catch (error) {
-      message.error('添加到购物车失败');
-    }
-  };
-
-  const handleUpdateCart = async (productId, newQuantity) => {
-    if (!isLoggedIn()) {
-      message.warning('请先登录');
-      navigate('/login');
-      return;
-    }
-
-    if (isAdmin()) {
-      message.warning('管理员账号无法购买商品');
-      return;
-    }
-
-    try {
-      // 找到对应的购物车项（如果有多个配置，取第一个）
-      const cartItem = cartItems.find(item => item.product_id === productId);
-      if (!cartItem) {
-        message.error('购物车项不存在');
-        return;
-      }
-
-      if (newQuantity <= 0) {
-        // 删除购物车项
-        await api.removeFromCart(cartItem.cart_id);
-        message.success('已从购物车移除');
-      } else {
-        // 更新数量
-        await api.updateCartItem(cartItem.cart_id, newQuantity);
-        message.success('购物车已更新');
-      }
-      
-      fetchCart(); // 刷新购物车
-    } catch (error) {
-      message.error('更新购物车失败');
-    }
-  };
 
   const getCategoryName = (category) => {
     const categoryMap = {
@@ -569,9 +528,6 @@ const HomePage = () => {
               products={products} 
               isAdmin={isAdmin()} 
               isLoggedIn={isLoggedIn()} 
-              handleAddToCart={handleAddToCart}
-              handleUpdateCart={handleUpdateCart}
-              cartItems={cartItems}
               navigate={navigate}
             />
           )}

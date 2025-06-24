@@ -9,6 +9,7 @@ import AdminPage from './pages/AdminPage';
 import CartPage from './pages/CartPage';
 import OrdersPage from './pages/OrdersPage';
 import { useAuth } from './contexts/AuthContext';
+import { CartProvider } from './contexts/CartContext';
 
 function App() {
   const { loading } = useAuth();
@@ -28,17 +29,19 @@ function App() {
 
   return (
     <ConfigProvider locale={zhCN}>
-      <Router>
-        <div className="App">
-          <Header />
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/cart" element={<CartPage />} />
-            <Route path="/orders" element={<OrdersPage />} />
-          </Routes>
-        </div>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <CartProvider>
+          <div className="App">
+            <Header />
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/admin" element={<AdminPage />} />
+              <Route path="/cart" element={<CartPage />} />
+              <Route path="/orders" element={<OrdersPage />} />
+            </Routes>
+          </div>
+        </CartProvider>
       </Router>
     </ConfigProvider>
   );
