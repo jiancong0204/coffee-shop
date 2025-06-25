@@ -16,6 +16,18 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [variantSelectorVisible, setVariantSelectorVisible] = useState(false);
   const { cartItems, addToCart, updateCartItem, removeFromCart, getProductQuantity, hasMultipleConfigurations } = useCart();
+  
+  // 检测屏幕尺寸
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const onAddToCart = async (productId, variantSelections, quantity = 1) => {
     if (!isLoggedIn) {
@@ -114,8 +126,6 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
     }
   };
 
-
-
   // 处理减少数量
   const handleDecreaseQuantity = (product) => {
     if (hasMultipleConfigurations(product.id)) {
@@ -137,8 +147,6 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
     }
   };
 
-
-
   const renderCartButton = (product) => {
     const quantity = getProductQuantity(product.id);
     const isLoading = isUpdating === product.id;
@@ -150,7 +158,11 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
 
     if (isAdmin) {
       return (
-        <Button disabled className="cart-button">
+        <Button 
+          disabled 
+          className="cart-button"
+          size={isMobile ? 'small' : 'default'}
+        >
           管理员模式
         </Button>
       );
@@ -162,6 +174,7 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
         <Button
           disabled
           className="cart-button"
+          size={isMobile ? 'small' : 'default'}
           style={{ color: '#ff4d4f', borderColor: '#ff4d4f' }}
         >
           已售罄
@@ -178,8 +191,9 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
           disabled={!product.available || !hasStock || isLoading}
           loading={isLoading}
           className="cart-button"
+          size={isMobile ? 'small' : 'default'}
         >
-          加入购物车
+          {isMobile ? '加购' : '加入购物车'}
         </Button>
       );
     }
@@ -214,10 +228,23 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
         <Card
           key={product.id}
           className="product-item-card"
+          style={{ 
+            marginBottom: isMobile ? 12 : 16,
+            borderRadius: isMobile ? 8 : 12
+          }}
         >
-          <div className="product-content">
+          <div className="product-content" style={{
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: isMobile ? 8 : 16,
+            alignItems: isMobile ? 'stretch' : 'center'
+          }}>
             {/* 商品图片 */}
-            <div className="product-image">
+            <div className="product-image" style={{
+              width: isMobile ? '100%' : 80,
+              height: isMobile ? 120 : 80,
+              maxWidth: isMobile ? 200 : 80,
+              alignSelf: isMobile ? 'center' : 'flex-start'
+            }}>
               <Image
                 src={product.image_url || getDefaultImage()}
                 alt={product.name}
@@ -231,21 +258,45 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
             </div>
 
             {/* 商品信息 */}
-            <div className="product-info">
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8}}>
+            <div className="product-info" style={{
+              flex: 1,
+              textAlign: isMobile ? 'center' : 'left'
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: isMobile ? 'center' : 'flex-start', 
+                gap: 8,
+                flexDirection: isMobile ? 'column' : 'row',
+                marginBottom: isMobile ? 8 : 4
+              }}>
                 <Title 
                   level={4} 
                   className="product-title"
-                  style={{ margin: 0, lineHeight: '1.2' }}
+                  style={{ 
+                    margin: 0, 
+                    lineHeight: '1.2',
+                    fontSize: isMobile ? '16px' : '18px',
+                    textAlign: isMobile ? 'center' : 'left'
+                  }}
                 >
                   {product.name}
                 </Title>
                 {product.tags && product.tags.length > 0 && (
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    gap: 4, 
+                    flexWrap: 'wrap',
+                    justifyContent: isMobile ? 'center' : 'flex-start',
+                    marginTop: isMobile ? 4 : 0
+                  }}>
                     {product.tags.map((tag, index) => (
                       <span 
                         key={tag.id}
-                        style={getTagStyle(tag.color)}
+                        style={{
+                          ...getTagStyle(tag.color),
+                          fontSize: isMobile ? '10px' : '11px',
+                          padding: isMobile ? '1px 4px' : '2px 6px'
+                        }}
                       >
                         {tag.name}
                       </span>
@@ -257,20 +308,41 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
               <Text 
                 type="secondary" 
                 className="product-description"
+                style={{
+                  fontSize: isMobile ? '13px' : '14px',
+                  lineHeight: '1.4',
+                  display: 'block',
+                  textAlign: isMobile ? 'center' : 'left'
+                }}
               >
                 {product.description || '暂无描述'}
               </Text>
             </div>
 
             {/* 价格和按钮区域 */}
-            <div className="product-actions">
-              <div className="product-price">
-                <Text strong className="price-text">
+            <div className="product-actions" style={{
+              flexDirection: isMobile ? 'row' : 'column',
+              alignItems: isMobile ? 'center' : 'flex-end',
+              justifyContent: isMobile ? 'space-between' : 'flex-start',
+              gap: isMobile ? 12 : 8,
+              minWidth: isMobile ? 'auto' : 120,
+              marginTop: isMobile ? 8 : 0
+            }}>
+              <div className="product-price" style={{
+                textAlign: isMobile ? 'left' : 'center',
+                order: isMobile ? 1 : 1
+              }}>
+                <Text strong className="price-text" style={{
+                  fontSize: isMobile ? '18px' : '20px'
+                }}>
                   ¥{product.price}
                 </Text>
               </div>
               
-              <div className="product-cart">
+              <div className="product-cart" style={{
+                order: isMobile ? 2 : 2,
+                minWidth: isMobile ? 'auto' : '100px'
+              }}>
                 {renderCartButton(product)}
               </div>
             </div>
@@ -473,6 +545,18 @@ const groupProductsByCategory = (products) => {
 
 // 分组商品列表组件
 function GroupedProductList({ groupedProducts, categoryMap, categoryData, isAdmin, isLoggedIn, navigate }) {
+  // 检测屏幕尺寸
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const getCategoryName = (category) => {
     const displayName = categoryMap[category] || category;
     
@@ -500,19 +584,22 @@ function GroupedProductList({ groupedProducts, categoryMap, categoryData, isAdmi
   return (
     <div>
       {groupedProducts.map((group, groupIndex) => (
-        <div key={group.category} style={{ marginBottom: groupIndex < groupedProducts.length - 1 ? 32 : 0 }}>
+        <div key={group.category} style={{ 
+          marginBottom: groupIndex < groupedProducts.length - 1 ? (isMobile ? 24 : 32) : 0 
+        }}>
           {/* 分类标题 */}
           <div style={{ 
-            marginBottom: 16, 
-            paddingBottom: 8, 
+            marginBottom: isMobile ? 12 : 16, 
+            paddingBottom: isMobile ? 6 : 8, 
             borderBottom: '2px solid #f0f0f0',
             display: 'flex',
-            alignItems: 'center'
+            alignItems: 'center',
+            justifyContent: isMobile ? 'center' : 'flex-start'
           }}>
             <Title level={3} style={{ 
               margin: 0, 
               color: '#8B4513',
-              fontSize: '20px',
+              fontSize: isMobile ? '18px' : '20px',
               fontWeight: 'bold'
             }}>
               {getCategoryName(group.category)}
@@ -520,7 +607,7 @@ function GroupedProductList({ groupedProducts, categoryMap, categoryData, isAdmi
             <Text style={{ 
               marginLeft: 12, 
               color: '#999',
-              fontSize: '14px'
+              fontSize: isMobile ? '12px' : '14px'
             }}>
               ({group.products.length} 款)
             </Text>
@@ -549,13 +636,23 @@ const HomePage = () => {
   const [categoryData, setCategoryData] = useState([]); // 保存完整的分类数据
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  
+  // 检测屏幕尺寸
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     fetchProducts();
     fetchCategories();
   }, []);
-
-
 
   const fetchProducts = async (category = null) => {
     try {
@@ -629,8 +726,6 @@ const HomePage = () => {
     fetchProducts(category === 'all' ? null : category);
   };
 
-
-
   const getCategoryName = (category) => {
     const displayName = categoryMap[category] || category;
     
@@ -668,21 +763,25 @@ const HomePage = () => {
   if (!isLoggedIn()) {
     return (
       <Layout style={{ minHeight: '100vh' }}>
-        <Content style={{ padding: '20px' }}>
+        <Content style={{ padding: isMobile ? '12px' : '20px' }}>
           <div style={{ 
             textAlign: 'center', 
-            padding: '60px 20px',
+            padding: isMobile ? '40px 16px' : '60px 20px',
             maxWidth: '500px',
             margin: '0 auto'
           }}>
-            <div style={{ fontSize: '64px', marginBottom: 24 }}>☕</div>
-            <Title level={1} style={{ color: '#8B4513', marginBottom: 16 }}>
+            <div style={{ fontSize: isMobile ? '48px' : '64px', marginBottom: isMobile ? 16 : 24 }}>☕</div>
+            <Title level={1} style={{ 
+              color: '#8B4513', 
+              marginBottom: isMobile ? 12 : 16,
+              fontSize: isMobile ? '24px' : '32px'
+            }}>
               One Four O Three
             </Title>
             <Text style={{ 
-              fontSize: '16px', 
+              fontSize: isMobile ? '14px' : '16px', 
               color: '#666', 
-              marginBottom: 32, 
+              marginBottom: isMobile ? 24 : 32, 
               display: 'block',
               lineHeight: '1.6'
             }}>
@@ -691,9 +790,9 @@ const HomePage = () => {
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
               <Button 
                 type="primary" 
-                size="large" 
+                size={isMobile ? 'default' : 'large'}
                 onClick={() => navigate('/login')}
-                style={{ minWidth: '120px' }}
+                style={{ minWidth: isMobile ? '100px' : '120px' }}
               >
                 登录
               </Button>
@@ -706,13 +805,24 @@ const HomePage = () => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Content style={{ padding: '16px' }}>
+      <Content style={{ padding: isMobile ? '8px' : '16px' }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ marginBottom: 24, textAlign: 'center' }}>
-            <Title level={2} style={{ color: '#8B4513', marginBottom: 8 }}>
+          <div style={{ 
+            marginBottom: isMobile ? 16 : 24, 
+            textAlign: 'center',
+            padding: isMobile ? '0 8px' : '0'
+          }}>
+            <Title level={2} style={{ 
+              color: '#8B4513', 
+              marginBottom: isMobile ? 4 : 8,
+              fontSize: isMobile ? '20px' : '28px'
+            }}>
               ☕ 菜单
             </Title>
-            <Text style={{ fontSize: '16px', color: '#666' }}>
+            <Text style={{ 
+              fontSize: isMobile ? '14px' : '16px', 
+              color: '#666' 
+            }}>
               选择您喜欢的饮品
             </Text>
           </div>
@@ -721,14 +831,17 @@ const HomePage = () => {
             activeKey={selectedCategory}
             onChange={handleCategoryChange}
             items={tabItems}
-            size="large"
+            size={isMobile ? 'default' : 'large'}
             centered
-            style={{ marginBottom: 24 }}
+            style={{ 
+              marginBottom: isMobile ? 16 : 24,
+              padding: isMobile ? '0 4px' : '0'
+            }}
           />
 
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '50px 0' }}>
-              <Text type="secondary" style={{ fontSize: '16px' }}>
+            <div style={{ textAlign: 'center', padding: isMobile ? '30px 0' : '50px 0' }}>
+              <Text type="secondary" style={{ fontSize: isMobile ? '14px' : '16px' }}>
                 加载中...
               </Text>
             </div>
@@ -754,14 +867,15 @@ const HomePage = () => {
 
           {((selectedCategory === 'all' && groupedProducts.length === 0) || 
             (selectedCategory !== 'all' && products.length === 0)) && !loading && (
-            <div style={{ textAlign: 'center', padding: '50px 0' }}>
-              <Text type="secondary" style={{ fontSize: '16px' }}>
+            <div style={{ textAlign: 'center', padding: isMobile ? '30px 0' : '50px 0' }}>
+              <Text type="secondary" style={{ fontSize: isMobile ? '14px' : '16px' }}>
                 {isAdmin() ? '暂无商品，请先添加商品' : '暂无商品'}
               </Text>
               {isAdmin() && (
                 <div style={{ marginTop: 16 }}>
                   <Button 
                     type="primary" 
+                    size={isMobile ? 'default' : 'large'}
                     onClick={() => navigate('/admin')}
                   >
                     去添加商品

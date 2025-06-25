@@ -552,3 +552,318 @@ code {
     padding: 12px !important;
   }
 }
+
+/* 购物车页面样式优化 */
+.cart-page-list-item {
+  transition: all 0.3s ease;
+}
+
+/* 移动端购物车优化 */
+@media (max-width: 768px) {
+  /* 购物车列表项移动端优化 */
+  .ant-list-item {
+    padding: 12px 8px !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+  }
+  
+  .ant-list-item:last-child {
+    border-bottom: none !important;
+  }
+  
+  /* 购物车标题移动端优化 */
+  .ant-typography h2 {
+    margin-bottom: 16px !important;
+  }
+  
+  /* 购物车卡片移动端优化 */
+  .ant-card-body {
+    padding: 16px 12px !important;
+  }
+  
+  /* 购物车分割线移动端优化 */
+  .ant-divider-horizontal {
+    margin: 16px 0 !important;
+  }
+  
+  /* 购物车按钮移动端优化 */
+  .ant-btn {
+    touch-action: manipulation;
+    min-height: 36px;
+  }
+  
+  .ant-btn-lg {
+    min-height: 44px !important;
+    font-size: 16px !important;
+  }
+  
+  /* 购物车数量控制按钮优化 */
+  .ant-btn-group-compact .ant-btn {
+    min-width: 32px !important;
+    height: 32px !important;
+  }
+}
+
+/* 超小屏幕购物车优化 */
+@media (max-width: 480px) {
+  .ant-card-body {
+    padding: 12px 8px !important;
+  }
+  
+  .ant-list-item {
+    padding: 8px 4px !important;
+  }
+  
+  /* 超小屏幕按钮优化 */
+  .ant-btn {
+    font-size: 14px !important;
+    padding: 4px 8px !important;
+  }
+  
+  .ant-btn-lg {
+    font-size: 16px !important;
+    padding: 8px 16px !important;
+  }
+  
+  /* 超小屏幕数量控制优化 */
+  .ant-btn-group-compact .ant-btn {
+    min-width: 28px !important;
+    height: 28px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* 菜单页面样式优化 */
+.product-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.product-item-card {
+  transition: all 0.3s ease;
+  border: 1px solid #f0f0f0;
+}
+
+.product-item-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #d9d9d9;
+}
+
+.product-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+.product-image {
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #f8f8f8;
+}
+
+.product-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.product-title {
+  margin-bottom: 8px !important;
+  font-weight: 600 !important;
+}
+
+.product-description {
+  margin-bottom: 0 !important;
+  color: #666 !important;
+}
+
+.product-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.product-price {
+  text-align: center;
+}
+
+.price-text {
+  font-size: 20px !important;
+  color: #ff4d4f !important;
+  font-weight: bold !important;
+}
+
+.product-cart {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* 移动端菜单页面优化 */
+@media (max-width: 768px) {
+  /* 产品列表移动端优化 */
+  .product-list {
+    gap: 12px;
+    padding: 0 4px;
+  }
+  
+  .product-item-card {
+    border-radius: 8px !important;
+    margin-bottom: 12px !important;
+  }
+  
+  .product-item-card .ant-card-body {
+    padding: 12px !important;
+  }
+  
+  .product-content {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    padding: 0 !important;
+  }
+  
+  .product-image {
+    width: 100% !important;
+    height: 120px !important;
+    max-width: 200px !important;
+    align-self: center !important;
+  }
+  
+  .product-info {
+    text-align: center !important;
+    padding: 0 8px;
+  }
+  
+  .product-title {
+    font-size: 16px !important;
+    margin-bottom: 6px !important;
+  }
+  
+  .product-description {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+  }
+  
+  .product-actions {
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    min-width: auto !important;
+    margin-top: 8px !important;
+  }
+  
+  .product-price {
+    text-align: left !important;
+    flex: 1;
+  }
+  
+  .price-text {
+    font-size: 18px !important;
+  }
+  
+  .product-cart {
+    flex: none !important;
+    width: auto !important;
+  }
+  
+  .cart-button {
+    min-width: 80px !important;
+    height: 32px !important;
+    font-size: 12px !important;
+  }
+  
+  /* 分类标题移动端优化 */
+  .ant-typography h3 {
+    font-size: 18px !important;
+    text-align: center !important;
+  }
+  
+  /* 标签移动端优化 */
+  .product-info div[style*="display: flex"] span {
+    font-size: 10px !important;
+    padding: 1px 4px !important;
+    margin: 2px !important;
+  }
+  
+  /* Tabs移动端优化 */
+  .ant-tabs {
+    padding: 0 4px !important;
+  }
+  
+  .ant-tabs-tab {
+    padding: 8px 12px !important;
+    font-size: 13px !important;
+    margin: 0 4px !important;
+  }
+  
+  .ant-tabs-content-holder {
+    padding: 0 !important;
+  }
+  
+  /* 数量控制按钮移动端优化 */
+  .quantity-controls {
+    gap: 6px !important;
+  }
+  
+  .quantity-btn {
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+  }
+  
+  .quantity-display {
+    min-width: 20px !important;
+    font-size: 14px !important;
+  }
+}
+
+/* 超小屏幕菜单优化 */
+@media (max-width: 480px) {
+  .product-list {
+    padding: 0 2px;
+  }
+  
+  .product-item-card .ant-card-body {
+    padding: 8px !important;
+  }
+  
+  .product-image {
+    height: 100px !important;
+    max-width: 150px !important;
+  }
+  
+  .product-title {
+    font-size: 15px !important;
+  }
+  
+  .product-description {
+    font-size: 12px !important;
+  }
+  
+  .price-text {
+    font-size: 16px !important;
+  }
+  
+  .cart-button {
+    min-width: 70px !important;
+    height: 28px !important;
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+  }
+  
+  .ant-tabs-tab {
+    padding: 6px 8px !important;
+    font-size: 12px !important;
+    margin: 0 2px !important;
+  }
+  
+  /* 分类标题超小屏幕优化 */
+  .ant-typography h3 {
+    font-size: 16px !important;
+  }
+}

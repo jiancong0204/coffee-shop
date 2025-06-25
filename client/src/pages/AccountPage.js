@@ -195,7 +195,7 @@ const AccountPage = () => {
                     </Col>
                     <Col span={8}>
                       <Statistic
-                        title="平均订单金额"
+                        title="平均订单价格"
                         value={userStats.average_amount}
                         prefix={<BarChartOutlined />}
                         valueStyle={{ color: '#722ed1' }}

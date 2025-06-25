@@ -20,6 +20,18 @@ const CartPage = () => {
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [newOrder, setNewOrder] = useState(null);
   const [highlightProductId, setHighlightProductId] = useState(null);
+  
+  // 检测屏幕尺寸
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!isLoggedIn() || isAdmin()) {
@@ -105,17 +117,26 @@ const CartPage = () => {
     }
 
     return (
-      <div style={{ marginTop: 8 }}>
-        <Space wrap>
+      <div style={{ marginTop: 8, marginBottom: isMobile ? 8 : 0 }}>
+        <Space wrap size={[4, 4]}>
           {Object.values(variantSelections).map((selection, index) => (
             <Tag 
               key={index} 
               color="blue" 
-              style={{ marginBottom: 4 }}
+              style={{ 
+                marginBottom: 4,
+                fontSize: isMobile ? '11px' : '12px',
+                padding: isMobile ? '2px 6px' : '4px 8px',
+                lineHeight: isMobile ? '16px' : '20px'
+              }}
             >
               {selection.type_display_name}: {selection.option_display_name}
               {selection.price_adjustment !== 0 && (
-                <Text style={{ marginLeft: 4, color: selection.price_adjustment > 0 ? '#f50' : '#52c41a' }}>
+                <Text style={{ 
+                  marginLeft: 4, 
+                  color: selection.price_adjustment > 0 ? '#f50' : '#52c41a',
+                  fontSize: isMobile ? '10px' : '12px'
+                }}>
                   ({selection.price_adjustment > 0 ? '+' : ''}¥{selection.price_adjustment})
                 </Text>
               )}
@@ -165,9 +186,9 @@ const CartPage = () => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Content style={{ padding: '24px 0' }}>
+      <Content style={{ padding: isMobile ? '12px 0' : '24px 0' }}>
         <div className="container">
-          <Title level={2} style={{ textAlign: 'center', marginBottom: 24 }}>
+          <Title level={2} style={{ textAlign: 'center', marginBottom: isMobile ? 16 : 24, fontSize: isMobile ? '20px' : '28px' }}>
             <ShoppingCartOutlined /> 购物车
           </Title>
 
@@ -194,10 +215,12 @@ const CartPage = () => {
                       borderRadius: highlightProductId === item.product_id ? '8px' : '0',
                       border: highlightProductId === item.product_id ? '2px solid #1890ff' : 'none',
                       margin: highlightProductId === item.product_id ? '4px 0' : '0',
-                      padding: highlightProductId === item.product_id ? '12px' : '16px'
+                      padding: highlightProductId === item.product_id ? '12px' : (isMobile ? '12px 8px' : '16px'),
+                      flexDirection: isMobile ? 'column' : 'row',
+                      alignItems: isMobile ? 'stretch' : 'flex-start'
                     }}
-                    actions={[
-                      <Space>
+                    actions={isMobile ? [] : [
+                      <Space key="actions">
                         <Space.Compact>
                           <Button
                             icon={<MinusOutlined />}
@@ -228,35 +251,113 @@ const CartPage = () => {
                       </Space>
                     ]}
                   >
-                    <List.Item.Meta
-                      avatar={
+                    <div style={{ 
+                      display: 'flex', 
+                      width: '100%',
+                      flexDirection: isMobile ? 'column' : 'row',
+                      gap: isMobile ? 12 : 16
+                    }}>
+                      {/* 商品信息区域 */}
+                      <div style={{ 
+                        display: 'flex', 
+                        flex: 1,
+                        gap: 12,
+                        flexDirection: isMobile ? 'row' : 'row'
+                      }}>
                         <img
                           src={item.image_url || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiBmaWxsPSIjZjVmNWY1Ii8+Cjx0ZXh0IHg9IjMyIiB5PSIzMiIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEwIiBmaWxsPSIjOTk5OTk5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iMC4zZW0iPuWVhuWTgeWbvueJhzwvdGV4dD4KPC9zdmc+Cg=='}
                           alt={item.name}
-                          style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8 }}
+                          style={{ 
+                            width: isMobile ? 60 : 64, 
+                            height: isMobile ? 60 : 64, 
+                            objectFit: 'cover', 
+                            borderRadius: 8,
+                            flexShrink: 0
+                          }}
                         />
-                      }
-                      title={
-                        <div>
-                          <div>{item.name}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ 
+                            fontSize: isMobile ? '16px' : '16px',
+                            fontWeight: 500,
+                            marginBottom: 4,
+                            lineHeight: '1.4'
+                          }}>
+                            {item.name}
+                          </div>
+                          <div style={{ 
+                            fontSize: isMobile ? '13px' : '14px',
+                            color: '#666',
+                            marginBottom: 4,
+                            lineHeight: '1.4'
+                          }}>
+                            {item.description}
+                          </div>
                           {renderVariantSelections(item.variant_selections)}
                         </div>
-                      }
-                      description={item.description}
-                    />
-                    <div style={{ textAlign: 'right' }}>
-                      <Text strong style={{ fontSize: '16px' }}>
-                        ¥{item.total_price.toFixed(2)}
-                      </Text>
-                      <br />
-                      <Text type="secondary">
-                        ¥{item.adjusted_price ? item.adjusted_price.toFixed(2) : item.price.toFixed(2)} × {item.quantity}
-                      </Text>
-                      {item.adjusted_price && item.adjusted_price !== item.price && (
-                        <div style={{ fontSize: '12px', color: '#999', marginTop: 2 }}>
-                          原价: ¥{item.price.toFixed(2)}
+                      </div>
+
+                      {/* 价格和操作区域 */}
+                      <div style={{ 
+                        display: 'flex',
+                        flexDirection: isMobile ? 'row' : 'column',
+                        alignItems: isMobile ? 'center' : 'flex-end',
+                        justifyContent: isMobile ? 'space-between' : 'flex-start',
+                        gap: isMobile ? 12 : 8,
+                        minWidth: isMobile ? 'auto' : 120
+                      }}>
+                        {/* 价格信息 */}
+                        <div style={{ 
+                          textAlign: isMobile ? 'left' : 'right',
+                          flexShrink: 0
+                        }}>
+                          <Text strong style={{ fontSize: isMobile ? '16px' : '16px' }}>
+                            ¥{item.total_price.toFixed(2)}
+                          </Text>
+                          <br />
+                          <Text type="secondary" style={{ fontSize: isMobile ? '12px' : '13px' }}>
+                            ¥{item.adjusted_price ? item.adjusted_price.toFixed(2) : item.price.toFixed(2)} × {item.quantity}
+                          </Text>
+                          {item.adjusted_price && item.adjusted_price !== item.price && (
+                            <div style={{ fontSize: '11px', color: '#999', marginTop: 2 }}>
+                              原价: ¥{item.price.toFixed(2)}
+                            </div>
+                          )}
                         </div>
-                      )}
+
+                        {/* 移动端操作按钮 */}
+                        {isMobile && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Space.Compact>
+                              <Button
+                                icon={<MinusOutlined />}
+                                size="small"
+                                onClick={() => updateQuantity(item.cart_id, Math.max(1, item.quantity - 1))}
+                                disabled={item.quantity <= 1 || updating}
+                                loading={updating}
+                              />
+                              <Button size="small" style={{ minWidth: '36px' }}>
+                                {item.quantity}
+                              </Button>
+                              <Button
+                                icon={<PlusOutlined />}
+                                size="small"
+                                onClick={() => updateQuantity(item.cart_id, Math.min(99, item.quantity + 1))}
+                                disabled={item.quantity >= 99 || updating}
+                                loading={updating}
+                              />
+                            </Space.Compact>
+                            <Button
+                              type="text"
+                              danger
+                              icon={<DeleteOutlined />}
+                              size="small"
+                              onClick={() => removeItem(item.cart_id)}
+                              disabled={updating}
+                              loading={updating}
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </List.Item>
                 )}
@@ -264,9 +365,25 @@ const CartPage = () => {
 
               <Divider />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Space>
-                  <Button onClick={() => navigate('/')}>
+              {/* 底部操作区域 - 响应式布局 */}
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: isMobile ? 'column' : 'row',
+                justifyContent: 'space-between', 
+                alignItems: isMobile ? 'stretch' : 'center',
+                gap: isMobile ? 16 : 0
+              }}>
+                {/* 左侧按钮组 */}
+                <div style={{ 
+                  display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  gap: isMobile ? 8 : 12,
+                  order: isMobile ? 2 : 1
+                }}>
+                  <Button 
+                    onClick={() => navigate('/')}
+                    style={{ flex: isMobile ? 1 : 'none' }}
+                  >
                     继续购物
                   </Button>
                   <Button 
@@ -280,26 +397,41 @@ const CartPage = () => {
                       } else {
                         message.error(result.error || '清空购物车失败');
                       }
-                      // 购物车数据已通过乐观更新处理，无需手动刷新
                     }}
+                    style={{ flex: isMobile ? 1 : 'none' }}
                   >
                     清空购物车
                   </Button>
-                </Space>
+                </div>
                 
-                <Space size="large">
-                  <Text strong style={{ fontSize: '18px' }}>
+                {/* 右侧总计和结账 */}
+                <div style={{ 
+                  display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  alignItems: isMobile ? 'stretch' : 'center',
+                  gap: isMobile ? 12 : 16,
+                  order: isMobile ? 1 : 2
+                }}>
+                  <Text strong style={{ 
+                    fontSize: isMobile ? '18px' : '18px',
+                    textAlign: isMobile ? 'center' : 'right',
+                    padding: isMobile ? '8px 0' : '0'
+                  }}>
                     总计: ¥{cart.totalAmount?.toFixed(2) || '0.00'}
                   </Text>
                   <Button
                     type="primary"
-                    size="large"
+                    size={isMobile ? 'large' : 'large'}
                     loading={checkoutLoading}
                     onClick={checkout}
+                    style={{ 
+                      minWidth: isMobile ? 'auto' : '80px',
+                      height: isMobile ? '44px' : 'auto'
+                    }}
                   >
                     结账
                   </Button>
-                </Space>
+                </div>
               </div>
             </Card>
           )}
