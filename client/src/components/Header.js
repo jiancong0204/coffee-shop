@@ -6,7 +6,8 @@ import {
   LogoutOutlined,
   SettingOutlined,
   HistoryOutlined,
-  MenuOutlined
+  MenuOutlined,
+  CalendarOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -38,6 +39,12 @@ const Header = () => {
       label: '我的订单',
       icon: <HistoryOutlined />,
       onClick: () => navigate('/orders')
+    },
+    {
+      key: 'reservations',
+      label: '我的预定',
+      icon: <CalendarOutlined />,
+      onClick: () => navigate('/reservations')
     },
     {
       key: 'logout',
@@ -77,7 +84,7 @@ const Header = () => {
         onClick={() => navigate('/')}
         style={{ cursor: 'pointer' }}
       >
-        ☕ 1403
+        🏪 1403
       </div>
 
       <div style={{ 

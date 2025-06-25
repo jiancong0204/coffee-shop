@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Card, Button, List, InputNumber, Typography, Space, Empty, message, Divider, Modal, Tag } from 'antd';
+import { Layout, Card, Button, List, InputNumber, Typography, Space, Empty, message, Divider, Modal, Tag, Input, Checkbox } from 'antd';
 import { DeleteOutlined, ShoppingCartOutlined, CheckCircleOutlined, PlusOutlined, MinusOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,6 +8,7 @@ import api from '../services/api';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
+const { TextArea } = Input;
 
 const CartPage = () => {
   const navigate = useNavigate();
@@ -20,6 +21,10 @@ const CartPage = () => {
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [newOrder, setNewOrder] = useState(null);
   const [highlightProductId, setHighlightProductId] = useState(null);
+  const [orderNotes, setOrderNotes] = useState(''); // 订单备注
+  const [selectedItems, setSelectedItems] = useState(new Set()); // 选中的商品
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false); // 订单确认模态框
+  const [hasLoadedFromStorage, setHasLoadedFromStorage] = useState(false); // 是否已从localStorage加载
   
   // 检测屏幕尺寸
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -55,6 +60,44 @@ const CartPage = () => {
     fetchCartData();
   }, [cartItems]);
 
+  // 从localStorage加载选择状态
+  useEffect(() => {
+    if (cartItems.length > 0 && !hasLoadedFromStorage) {
+      try {
+        const savedSelectedItems = localStorage.getItem('cart_selected_items');
+        if (savedSelectedItems) {
+          const savedSet = new Set(JSON.parse(savedSelectedItems));
+          // 只保留仍然存在于购物车中的商品
+          const currentCartIds = new Set(cartItems.map(item => item.cart_id));
+          const validSelectedItems = new Set([...savedSet].filter(id => currentCartIds.has(id)));
+          setSelectedItems(validSelectedItems);
+        } else {
+          // 如果没有保存的状态，默认全选（仅首次）
+          setSelectedItems(new Set(cartItems.map(item => item.cart_id)));
+        }
+      } catch (error) {
+        console.error('加载购物车选择状态失败:', error);
+        // 如果加载失败，默认全选
+        setSelectedItems(new Set(cartItems.map(item => item.cart_id)));
+      }
+      setHasLoadedFromStorage(true);
+    } else if (cartItems.length > 0 && hasLoadedFromStorage) {
+      // 如果购物车更新了，需要清理不存在的商品ID
+      const currentCartIds = new Set(cartItems.map(item => item.cart_id));
+      const validSelectedItems = new Set([...selectedItems].filter(id => currentCartIds.has(id)));
+      if (validSelectedItems.size !== selectedItems.size) {
+        setSelectedItems(validSelectedItems);
+        // 保存更新后的选择状态
+        localStorage.setItem('cart_selected_items', JSON.stringify([...validSelectedItems]));
+      }
+    } else if (cartItems.length === 0) {
+      // 如果购物车为空，清空选择状态
+      setSelectedItems(new Set());
+      localStorage.removeItem('cart_selected_items');
+      setHasLoadedFromStorage(false);
+    }
+  }, [cartItems, hasLoadedFromStorage, selectedItems]);
+
   const fetchCartData = async () => {
     try {
       const response = await api.getCart();
@@ -84,17 +127,73 @@ const CartPage = () => {
     // 购物车数据已通过乐观更新处理，无需手动刷新
   };
 
+  // 处理商品选择
+  const handleItemSelect = (cartId, checked) => {
+    const newSelected = new Set(selectedItems);
+    if (checked) {
+      newSelected.add(cartId);
+    } else {
+      newSelected.delete(cartId);
+    }
+    setSelectedItems(newSelected);
+    // 保存到localStorage
+    localStorage.setItem('cart_selected_items', JSON.stringify([...newSelected]));
+  };
+
+  // 全选/取消全选
+  const handleSelectAll = (checked) => {
+    const newSelected = checked ? new Set(cartItems.map(item => item.cart_id)) : new Set();
+    setSelectedItems(newSelected);
+    // 保存到localStorage
+    localStorage.setItem('cart_selected_items', JSON.stringify([...newSelected]));
+  };
+
+  // 获取选中的商品
+  const getSelectedCartItems = () => {
+    return cartItems.filter(item => selectedItems.has(item.cart_id));
+  };
+
+  // 计算选中商品的总价
+  const getSelectedTotal = () => {
+    return getSelectedCartItems().reduce((total, item) => total + item.total_price, 0);
+  };
+
+  // 计算选中商品的总数量（所有规格数量的总和）
+  const getSelectedTotalQuantity = () => {
+    return getSelectedCartItems().reduce((total, item) => total + item.quantity, 0);
+  };
+
+  // 显示订单确认模态框
+  const showConfirmModal = () => {
+    const selectedCartItems = getSelectedCartItems();
+    if (selectedCartItems.length === 0) {
+      message.warning('请选择要结账的商品');
+      return;
+    }
+    setConfirmModalVisible(true);
+  };
+
   const checkout = async () => {
-    if (cartItems.length === 0) {
-      message.warning('购物车为空');
+    const selectedCartItems = getSelectedCartItems();
+    if (selectedCartItems.length === 0) {
+      message.warning('请选择要结账的商品');
       return;
     }
 
     setCheckoutLoading(true);
     try {
-      const response = await api.checkout();
+      const selectedCartIds = selectedCartItems.map(item => item.cart_id);
+      const response = await api.checkout(orderNotes, selectedCartIds);
       setNewOrder(response.data.order);
       setOrderSuccess(true);
+      setOrderNotes(''); // 清空备注
+      setConfirmModalVisible(false); // 关闭确认模态框
+      
+      // 清理已结账商品的选择状态
+      const remainingSelected = new Set([...selectedItems].filter(id => !selectedCartIds.includes(id)));
+      setSelectedItems(remainingSelected);
+      localStorage.setItem('cart_selected_items', JSON.stringify([...remainingSelected]));
+      
       fetchCart(); // 刷新购物车上下文
       fetchCartData(); // 刷新本地购物车数据
     } catch (error) {
@@ -205,6 +304,22 @@ const CartPage = () => {
             </Card>
           ) : (
             <Card>
+              {/* 全选控制 */}
+              <div style={{ marginBottom: 16, padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+                <Checkbox
+                  checked={cartItems.length > 0 && selectedItems.size === cartItems.length}
+                  indeterminate={selectedItems.size > 0 && selectedItems.size < cartItems.length}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                >
+                  <Text strong>全选 ({selectedItems.size}/{cartItems.length})</Text>
+                </Checkbox>
+                {selectedItems.size > 0 && (
+                  <Text type="secondary" style={{ marginLeft: 16 }}>
+                    已选商品总计: ¥{getSelectedTotal().toFixed(2)}
+                  </Text>
+                )}
+              </div>
+
               <List
                 dataSource={cartItems}
                 renderItem={(item) => (
@@ -257,6 +372,18 @@ const CartPage = () => {
                       flexDirection: isMobile ? 'column' : 'row',
                       gap: isMobile ? 12 : 16
                     }}>
+                      {/* 选择框 */}
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'flex-start',
+                        paddingTop: isMobile ? 0 : 8
+                      }}>
+                        <Checkbox
+                          checked={selectedItems.has(item.cart_id)}
+                          onChange={(e) => handleItemSelect(item.cart_id, e.target.checked)}
+                        />
+                      </div>
+
                       {/* 商品信息区域 */}
                       <div style={{ 
                         display: 'flex', 
@@ -417,24 +544,128 @@ const CartPage = () => {
                     textAlign: isMobile ? 'center' : 'right',
                     padding: isMobile ? '8px 0' : '0'
                   }}>
-                    总计: ¥{cart.totalAmount?.toFixed(2) || '0.00'}
+                    已选商品: ¥{getSelectedTotal().toFixed(2)}
                   </Text>
                   <Button
                     type="primary"
                     size={isMobile ? 'large' : 'large'}
-                    loading={checkoutLoading}
-                    onClick={checkout}
+                    disabled={selectedItems.size === 0}
+                    onClick={showConfirmModal}
                     style={{ 
                       minWidth: isMobile ? 'auto' : '80px',
                       height: isMobile ? '44px' : 'auto'
                     }}
                   >
-                    结账
+                    结账 ({getSelectedTotalQuantity()})
                   </Button>
                 </div>
               </div>
             </Card>
           )}
+
+          {/* 订单确认模态框 */}
+          <Modal
+            title="确认订单"
+            open={confirmModalVisible}
+            onCancel={() => setConfirmModalVisible(false)}
+            footer={null}
+            width={isMobile ? '95%' : 600}
+            centered
+          >
+            <div>
+              {/* 订单商品列表 */}
+              <div style={{ marginBottom: 20 }}>
+                <Text strong style={{ fontSize: '16px', marginBottom: 12, display: 'block' }}>
+                  订单商品
+                </Text>
+                <List
+                  dataSource={getSelectedCartItems()}
+                  size="small"
+                  renderItem={(item) => (
+                    <List.Item style={{ padding: '8px 0' }}>
+                      <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 12 }}>
+                        <img
+                          src={item.image_url || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiBmaWxsPSIjZjVmNWY1Ii8+Cjx0ZXh0IHg9IjMyIiB5PSIzMiIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEwIiBmaWxsPSIjOTk5OTk5IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iMC4zZW0iPuWVhuWTgeWbvueJhzwvdGV4dD4KPC9zdmc+Cg=='}
+                          alt={item.name}
+                          style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 500, marginBottom: 2 }}>{item.name}</div>
+                          <div style={{ fontSize: '12px', color: '#666' }}>
+                            ¥{item.adjusted_price ? item.adjusted_price.toFixed(2) : item.price.toFixed(2)} × {item.quantity}
+                          </div>
+                          {item.variant_selections && Object.keys(item.variant_selections).length > 0 && (
+                            <div style={{ marginTop: 4 }}>
+                              <Space wrap size={[4, 4]}>
+                                {Object.values(item.variant_selections).map((selection, index) => (
+                                  <Tag key={index} color="blue" size="small">
+                                    {selection.type_display_name}: {selection.option_display_name}
+                                  </Tag>
+                                ))}
+                              </Space>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <Text strong>¥{item.total_price.toFixed(2)}</Text>
+                        </div>
+                      </div>
+                    </List.Item>
+                  )}
+                />
+              </div>
+
+              {/* 订单备注 */}
+              <div style={{ marginBottom: 20 }}>
+                <Text strong style={{ marginBottom: 8, display: 'block' }}>订单备注（可选）</Text>
+                <TextArea
+                  value={orderNotes}
+                  onChange={(e) => setOrderNotes(e.target.value)}
+                  placeholder="请输入订单备注，如特殊要求等（100字以内）"
+                  maxLength={100}
+                  showCount
+                  rows={3}
+                  style={{ resize: 'none' }}
+                />
+              </div>
+
+              {/* 订单总计 */}
+              <div style={{ 
+                padding: 16, 
+                backgroundColor: '#f6ffed', 
+                borderRadius: 8, 
+                border: '1px solid #b7eb8f',
+                marginBottom: 20
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text>商品总计:</Text>
+                  <Text>¥{getSelectedTotal().toFixed(2)}</Text>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text strong style={{ fontSize: '16px' }}>应付金额:</Text>
+                  <Text strong style={{ fontSize: '18px', color: '#f50' }}>¥{getSelectedTotal().toFixed(2)}</Text>
+                </div>
+              </div>
+
+              {/* 操作按钮 */}
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                <Button 
+                  size="large" 
+                  onClick={() => setConfirmModalVisible(false)}
+                >
+                  返回修改
+                </Button>
+                <Button 
+                  type="primary" 
+                  size="large"
+                  loading={checkoutLoading}
+                  onClick={checkout}
+                >
+                  确认支付
+                </Button>
+              </div>
+            </div>
+          </Modal>
 
           {/* 订单成功模态框 */}
           <Modal

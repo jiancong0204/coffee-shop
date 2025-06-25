@@ -185,7 +185,7 @@ const LoginPage = () => {
           }}
         >
           <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <div style={{ fontSize: '48px', marginBottom: 8 }}>☕</div>
+                            <div style={{ fontSize: '48px', marginBottom: 8 }}>🏪</div>
             <Title level={2} style={{ margin: 0, color: '#8B4513' }}>
               One Four O Three
             </Title>

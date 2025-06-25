@@ -85,6 +85,7 @@ function initDatabase() {
         available BOOLEAN DEFAULT true,
         available_num INTEGER DEFAULT 100,
         unlimited_supply BOOLEAN DEFAULT false,
+        reservation_enabled BOOLEAN DEFAULT true,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `, (err) => {
@@ -92,6 +93,8 @@ function initDatabase() {
         console.error('Error creating products table:', err);
       } else {
         console.log('Products table created successfully');
+        // 为现有商品表添加预定控制字段
+        addReservationEnabledColumnIfNotExists();
       }
     });
 
@@ -119,7 +122,7 @@ function initDatabase() {
       CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
-        pickup_number VARCHAR(20) UNIQUE,
+        pickup_number VARCHAR(20),
         total_amount DECIMAL(10,2) NOT NULL,
         status VARCHAR(20) DEFAULT 'pending',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -130,6 +133,8 @@ function initDatabase() {
         console.error('Error creating orders table:', err);
       } else {
         console.log('Orders table created successfully');
+        // 为现有订单表添加备注字段
+        addOrderNotesColumnIfNotExists();
       }
     });
 
@@ -294,6 +299,36 @@ function initDatabase() {
       }
     });
 
+    // 预定表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS reservations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        product_id INTEGER,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        reservation_date DATE NOT NULL,
+        variant_selections TEXT DEFAULT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        notes TEXT,
+        total_amount DECIMAL(10,2) NOT NULL,
+        is_paid BOOLEAN DEFAULT false,
+        order_id INTEGER DEFAULT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (product_id) REFERENCES products (id),
+        FOREIGN KEY (order_id) REFERENCES orders (id)
+      )
+    `, (err) => {
+      if (err) {
+        console.error('Error creating reservations table:', err);
+      } else {
+        console.log('Reservations table created successfully');
+        // 为现有预定表添加新字段
+        addReservationPaymentColumnsIfNotExists();
+      }
+    });
+
     // 所有表创建完成后，再执行数据初始化
     setTimeout(() => {
       createDefaultAdmin();
@@ -331,7 +366,7 @@ function addEmojiColumnIfNotExists() {
 // 更新现有分类的emoji
 function updateExistingCategoriesEmoji() {
   const emojiUpdates = [
-    { name: 'coffee', emoji: '☕' },
+    { name: 'coffee', emoji: '🥤' },
     { name: 'tea', emoji: '🍵' },
     { name: 'dessert', emoji: '🧁' },
     { name: 'snack', emoji: '🍪' }
@@ -370,6 +405,60 @@ function addVariantTypeEmojiColumnIfNotExists() {
     }
   });
 }
+
+// 为现有预定表添加支付相关字段
+function addReservationPaymentColumnsIfNotExists() {
+  // 添加total_amount字段
+  db.run("ALTER TABLE reservations ADD COLUMN total_amount DECIMAL(10,2) DEFAULT 0", (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('Error adding total_amount to reservations table:', err);
+    } else if (!err || !err.message?.includes('duplicate column')) {
+      console.log('Added total_amount column to reservations table');
+    }
+  });
+
+  // 添加is_paid字段
+  db.run("ALTER TABLE reservations ADD COLUMN is_paid BOOLEAN DEFAULT false", (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('Error adding is_paid to reservations table:', err);
+    } else if (!err || !err.message?.includes('duplicate column')) {
+      console.log('Added is_paid column to reservations table');
+    }
+  });
+
+  // 添加order_id字段
+  db.run("ALTER TABLE reservations ADD COLUMN order_id INTEGER DEFAULT NULL", (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('Error adding order_id to reservations table:', err);
+    } else if (!err || !err.message?.includes('duplicate column')) {
+      console.log('Added order_id column to reservations table');
+    }
+  });
+}
+
+// 为现有订单表添加备注字段
+function addOrderNotesColumnIfNotExists() {
+  db.run("ALTER TABLE orders ADD COLUMN notes TEXT DEFAULT NULL", (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('Error adding notes to orders table:', err);
+    } else if (!err || !err.message?.includes('duplicate column')) {
+      console.log('Added notes column to orders table');
+    }
+  });
+}
+
+// 为现有商品表添加预定控制字段
+function addReservationEnabledColumnIfNotExists() {
+  db.run("ALTER TABLE products ADD COLUMN reservation_enabled BOOLEAN DEFAULT true", (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('Error adding reservation_enabled to products table:', err);
+    } else if (!err || !err.message?.includes('duplicate column')) {
+      console.log('Added reservation_enabled column to products table');
+    }
+  });
+}
+
+
 
 // 更新现有细分类型的emoji
 function updateExistingVariantTypesEmoji() {
@@ -419,7 +508,7 @@ function createDefaultAdmin() {
 // 添加默认分类
 function addDefaultCategories() {
   const defaultCategories = [
-    { name: 'coffee', display_name: '咖啡', description: '各种口味的咖啡饮品', emoji: '☕', sort_order: 1 },
+    { name: 'coffee', display_name: '咖啡', description: '各种口味的咖啡饮品', emoji: '🥤', sort_order: 1 },
     { name: 'tea', display_name: '茶饮', description: '传统茶饮和奶茶系列', emoji: '🍵', sort_order: 2 },
     { name: 'dessert', display_name: '甜品', description: '精美的蛋糕和甜点', emoji: '🧁', sort_order: 3 },
     { name: 'snack', display_name: '小食', description: '各种小食和轻食', emoji: '🍪', sort_order: 4 }
@@ -606,7 +695,7 @@ function generatePickupNumbersForExistingOrders() {
           
           // 为该日期的订单按顺序分配取单号
           dateOrders.forEach(order => {
-            const pickupNumber = nextNumber.toString().padStart(3, '0');
+            const pickupNumber = nextNumber.toString().padStart(4, '0');
             db.run('UPDATE orders SET pickup_number = ? WHERE id = ?', [pickupNumber, order.id], (err) => {
               if (err) {
                 console.error('Error updating pickup number for order', order.id, ':', err);

@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Card, Table, Button, Modal, Form, Input, InputNumber, Select, message, Space, Popconfirm, Typography, Tabs, Tag, Badge, Upload, Image, Checkbox } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined, ShoppingOutlined, CheckOutlined, ClockCircleOutlined, EyeOutlined, UserOutlined, LockOutlined, UploadOutlined, InboxOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { Layout, Card, Table, Button, Modal, Form, Input, InputNumber, Select, message, Space, Popconfirm, Typography, Tabs, Tag, Badge, Upload, Image, Checkbox, DatePicker } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined, ShoppingOutlined, CheckOutlined, ClockCircleOutlined, EyeOutlined, UserOutlined, LockOutlined, UploadOutlined, InboxOutlined, ArrowLeftOutlined, CalendarOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import EmojiPicker from 'emoji-picker-react';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+// 配置dayjs插件
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -110,6 +117,15 @@ const AdminPage = () => {
   const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
   const [selectedEmoji, setSelectedEmoji] = useState('');
 
+  // 预定管理相关状态
+  const [reservations, setReservations] = useState([]);
+  const [reservationLoading, setReservationLoading] = useState(false);
+  const [reservationFilters, setReservationFilters] = useState({
+    status: 'all',
+    date: '',
+    customerName: ''
+  });
+
   // 商品筛选相关状态
   const [productFilters, setProductFilters] = useState({
     category: 'all',      // 分类筛选
@@ -125,6 +141,7 @@ const AdminPage = () => {
     }
     fetchProducts();
     fetchOrders();
+    fetchReservations(); // 初始化时就加载预定数据，用于显示角标
     fetchAdminList();
     fetchAllTags();
     fetchCategories(); // 确保分类数据在初始化时就加载
@@ -139,6 +156,8 @@ const AdminPage = () => {
   useEffect(() => {
     if (activeTab === 'customers' && (!customers || customers.length === 0)) {
       fetchCustomers();
+    } else if (activeTab === 'reservations' && (!reservations || reservations.length === 0)) {
+      fetchReservations();
     } else if (activeTab === 'products') {
       // 商品管理tab下，根据子视图加载对应数据
       if (productSubView === 'variants' && (!variantTypes || variantTypes.length === 0)) {
@@ -164,8 +183,16 @@ const AdminPage = () => {
   const fetchOrders = async () => {
     try {
       const response = await api.getAllOrders();
-      setOrders(response.data || []);
+      // 确保数据是数组格式
+      const ordersData = response.data;
+      if (Array.isArray(ordersData)) {
+        setOrders(ordersData);
+      } else {
+        console.error('Invalid orders data format:', ordersData);
+        setOrders([]);
+      }
     } catch (error) {
+      console.error('获取订单失败:', error);
       message.error('获取订单失败');
       setOrders([]);
     } finally {
@@ -198,6 +225,7 @@ const AdminPage = () => {
             ...product,
             available: Boolean(product.available),
             unlimited_supply: Boolean(product.unlimited_supply),
+            reservation_enabled: Boolean(product.reservation_enabled !== false), // 默认为true
             tagIds: tagIds
           };
           form.setFieldsValue(formData);
@@ -207,7 +235,8 @@ const AdminPage = () => {
           const formData = {
             ...product,
             available: Boolean(product.available),
-            unlimited_supply: Boolean(product.unlimited_supply)
+            unlimited_supply: Boolean(product.unlimited_supply),
+            reservation_enabled: Boolean(product.reservation_enabled !== false) // 默认为true
           };
           form.setFieldsValue(formData);
         });
@@ -219,7 +248,8 @@ const AdminPage = () => {
         form.setFieldsValue({
           unlimited_supply: false,
           available_num: 100,
-          available: true
+          available: true,
+          reservation_enabled: true
         });
         setImagePreview('');
       }
@@ -309,8 +339,13 @@ const AdminPage = () => {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
-    const date = new Date(dateString);
-    return isNaN(date.getTime()) ? '-' : date.toLocaleString('zh-CN');
+    try {
+      // 将UTC时间转换为本地时间（中国时区）
+      return dayjs.utc(dateString).tz('Asia/Shanghai').format('YYYY-MM-DD HH:mm:ss');
+    } catch (error) {
+      console.error('时间格式化错误:', error);
+      return '-';
+    }
   };
 
   const productColumns = [
@@ -379,6 +414,17 @@ const AdminPage = () => {
           </Tag>
         );
       }
+    },
+    {
+      title: '预定设置',
+      dataIndex: 'reservation_enabled',
+      key: 'reservation_enabled',
+      width: 100,
+      render: (reservationEnabled) => (
+        <Tag color={reservationEnabled !== false ? 'green' : 'red'}>
+          {reservationEnabled !== false ? '允许预定' : '不允许预定'}
+        </Tag>
+      )
     },
     {
       title: '标签',
@@ -556,6 +602,10 @@ const AdminPage = () => {
 
   const getUncompletedOrderCount = () => {
     return (orders || []).filter(order => order.status === 'pending' || order.status === 'preparing' || order.status === 'ready').length;
+  };
+
+  const getPendingReservationCount = () => {
+    return (reservations || []).filter(reservation => reservation.status === 'pending').length;
   };
 
   // 管理员管理相关函数
@@ -873,7 +923,11 @@ const AdminPage = () => {
 
   // 获取筛选后的订单列表
   const getFilteredOrders = () => {
-    let filteredOrders = [...(orders || [])];
+    // 确保orders是数组
+    if (!Array.isArray(orders)) {
+      return [];
+    }
+    let filteredOrders = [...orders];
     
     // 按取单号筛选
     if (orderFilters.pickupNumber.trim()) {
@@ -1182,7 +1236,8 @@ const AdminPage = () => {
     } catch (error) {
       console.error('获取选项配置失败:', error);
       // 如果获取失败，使用默认选项列表，并按权重排序
-      const defaultOptions = [...(variantType.options || [])].sort((a, b) => {
+      const options = variantType.options;
+      const defaultOptions = Array.isArray(options) ? [...options].sort((a, b) => {
         const aOrder = a.sort_order || 999;
         const bOrder = b.sort_order || 999;
         
@@ -1191,7 +1246,7 @@ const AdminPage = () => {
         }
         
         return (a.display_name || '').localeCompare(b.display_name || '');
-      });
+      }) : [];
       setCurrentVariantOptions(defaultOptions);
       optionConfigForm.setFieldsValue({
         enabled_options: defaultOptions.map(option => option.id) || []
@@ -1408,6 +1463,140 @@ const AdminPage = () => {
     }
   };
 
+  // 预定管理相关函数
+  const fetchReservations = async () => {
+    setReservationLoading(true);
+    try {
+      const response = await api.getAllReservationsAdmin(reservationFilters);
+      console.log('管理员API响应:', response);
+      
+      // 直接使用 response.data.data，因为后端返回 { data: [...] }
+      const reservationsData = response.data.data;
+      console.log('管理员预定数据:', reservationsData);
+      console.log('是否为数组:', Array.isArray(reservationsData));
+      
+      if (Array.isArray(reservationsData)) {
+        setReservations(reservationsData);
+        console.log('设置管理员预定数据成功，数量:', reservationsData.length);
+      } else {
+        console.error('管理员预定数据不是数组格式:', reservationsData);
+        setReservations([]);
+      }
+    } catch (error) {
+      console.error('获取预定列表失败:', error);
+      console.error('错误详情:', error.response?.data);
+      message.error('获取预定列表失败');
+      setReservations([]);
+    } finally {
+      setReservationLoading(false);
+    }
+  };
+
+  const handleReservationStatusChange = async (reservationId, status, notes = '') => {
+    try {
+      const response = await api.updateReservationStatus(reservationId, { status, notes });
+      
+      if (status === 'confirmed' && response.data?.order) {
+        message.success(`预定已确认并转为订单！取单号：${response.data.order.pickup_number}`);
+      } else {
+        message.success('预定状态已更新');
+      }
+      
+      fetchReservations(); // 刷新列表
+      // 如果转为了订单，也刷新订单列表
+      if (status === 'confirmed' && response.data?.order) {
+        fetchOrders();
+      }
+    } catch (error) {
+      message.error(error.response?.data?.error || '更新预定状态失败');
+    }
+  };
+
+  const getReservationStatusTag = (status) => {
+    const statusConfig = {
+      'pending': { color: 'orange', text: '待处理' },
+      'confirmed': { color: 'green', text: '已转订单' },
+      'cancelled': { color: 'red', text: '已取消' }
+    };
+    
+    const config = statusConfig[status] || { color: 'default', text: status };
+    return <Tag color={config.color}>{config.text}</Tag>;
+  };
+
+  const handleReservationFilter = (filterType, value) => {
+    setReservationFilters(prev => ({
+      ...prev,
+      [filterType]: value
+    }));
+  };
+
+  const resetReservationFilters = () => {
+    setReservationFilters({
+      status: 'all',
+      date: '',
+      customerName: ''
+    });
+  };
+
+  const getFilteredReservations = () => {
+    if (!reservations || reservations.length === 0) return [];
+    
+    return reservations.filter(reservation => {
+      // 状态筛选
+      if (reservationFilters.status !== 'all' && reservation.status !== reservationFilters.status) {
+        return false;
+      }
+      
+      // 日期筛选
+      if (reservationFilters.date && reservation.reservation_date !== reservationFilters.date) {
+        return false;
+      }
+      
+      // 客户名筛选
+      if (reservationFilters.customerName && 
+          !reservation.username.toLowerCase().includes(reservationFilters.customerName.toLowerCase())) {
+        return false;
+      }
+      
+      return true;
+    });
+  };
+
+  const renderReservationVariantSelections = (variantSelections) => {
+    // 更严格的类型检查
+    if (!variantSelections || 
+        typeof variantSelections !== 'object' || 
+        Array.isArray(variantSelections) ||
+        Object.keys(variantSelections).length === 0) {
+      return null;
+    }
+
+    try {
+      return (
+        <div style={{ marginTop: 4 }}>
+          <Space wrap size={[4, 4]}>
+            {Object.values(variantSelections).map((selection, index) => (
+              <Tag key={index} color="blue" size="small">
+                {selection?.type_display_name}: {selection?.option_display_name}
+                {selection?.price_adjustment !== 0 && (
+                  <span style={{ 
+                    marginLeft: 4, 
+                    color: selection.price_adjustment > 0 ? '#f50' : '#52c41a'
+                  }}>
+                    ({selection.price_adjustment > 0 ? '+' : ''}¥{selection.price_adjustment})
+                  </span>
+                )}
+              </Tag>
+            ))}
+          </Space>
+        </div>
+      );
+    } catch (error) {
+      console.error('Error rendering reservation variant selections:', error);
+      return null;
+    }
+  };
+
   // 管理员列表表格列
   const adminColumns = [
     {
@@ -1425,7 +1614,7 @@ const AdminPage = () => {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text) => new Date(text).toLocaleString('zh-CN'),
+      render: (text) => formatDate(text),
     },
     {
       title: '操作',
@@ -1654,6 +1843,228 @@ const AdminPage = () => {
                           showSizeChanger: true,
                           showQuickJumper: true,
                           showTotal: (total) => `共 ${total} 个订单`,
+                        }}
+                        scroll={{ x: 1200 }}
+                      />
+                    </div>
+                  )
+                },
+                {
+                  key: 'reservations',
+                  label: (
+                    <span>
+                      <CalendarOutlined style={{ marginRight: 8 }} />
+                      预定管理
+                      <Badge count={getPendingReservationCount()} style={{ marginLeft: 8 }} />
+                    </span>
+                  ),
+                  children: (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                        <Title level={3} style={{ margin: 0 }}>
+                          预定管理
+                        </Title>
+                        <Button 
+                          type="primary" 
+                          onClick={() => fetchReservations()}
+                        >
+                          刷新列表
+                        </Button>
+                      </div>
+
+                      <div style={{ marginBottom: 16 }}>
+                        <div style={{ marginBottom: 12 }}>
+                          <Space wrap>
+                            <Input
+                              placeholder="搜索客户名"
+                              value={reservationFilters.customerName}
+                              onChange={(e) => handleReservationFilter('customerName', e.target.value)}
+                              style={{ width: 150 }}
+                              allowClear
+                            />
+                            <Select
+                              value={reservationFilters.status}
+                              style={{ width: 120 }}
+                              onChange={(value) => handleReservationFilter('status', value)}
+                            >
+                              <Select.Option value="all">全部状态</Select.Option>
+                              <Select.Option value="pending">待处理</Select.Option>
+                              <Select.Option value="confirmed">已转订单</Select.Option>
+                              <Select.Option value="cancelled">已取消</Select.Option>
+                            </Select>
+                            <Input
+                              placeholder="预定日期 (YYYY-MM-DD)"
+                              value={reservationFilters.date}
+                              onChange={(e) => handleReservationFilter('date', e.target.value)}
+                              style={{ width: 180 }}
+                            />
+                            <Button onClick={resetReservationFilters}>
+                              重置筛选
+                            </Button>
+                          </Space>
+                        </div>
+                        <Text type="secondary">
+                          {getFilteredReservations().length !== (reservations || []).length ? (
+                            <>
+                              筛选结果: {getFilteredReservations().length} 个预定 (共 {(reservations || []).length} 个)
+                            </>
+                          ) : (
+                            <>
+                              共 {(reservations || []).length} 个预定
+                            </>
+                          )}
+                        </Text>
+                      </div>
+
+                      <Table
+                        columns={[
+                          {
+                            title: '预定ID',
+                            dataIndex: 'id',
+                            key: 'id',
+                            width: 80,
+                          },
+                          {
+                            title: '商品信息',
+                            key: 'product_info',
+                            width: 240,
+                            render: (_, record) => (
+                              <div>
+                                <div style={{ fontWeight: 500 }}>{record.product_name}</div>
+                                <div style={{ fontSize: '12px', color: '#666' }}>
+                                  数量: {record.quantity} 份
+                                </div>
+                                {renderReservationVariantSelections(record.variant_selections)}
+                                {record.notes && (
+                                  <div style={{ marginTop: 8 }}>
+                                    <Button
+                                      size="small"
+                                      type="link"
+                                      style={{ padding: 0, height: 'auto', fontSize: '12px' }}
+                                      onClick={() => Modal.info({
+                                        title: '预定备注',
+                                        content: record.notes
+                                      })}
+                                    >
+                                      📝 查看备注
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            ),
+                          },
+                          {
+                            title: '客户',
+                            dataIndex: 'username',
+                            key: 'username',
+                            width: 120,
+                          },
+                          {
+                             title: '预定日期',
+                             dataIndex: 'reservation_date',
+                             key: 'reservation_date',
+                             width: 120,
+                             render: (date) => dayjs(date).format('MM月DD日'),
+                           },
+                          {
+                            title: '支付金额',
+                            dataIndex: 'total_amount',
+                            key: 'total_amount',
+                            width: 100,
+                            render: (amount, record) => (
+                              <div>
+                                <Text strong>¥{amount ? amount.toFixed(2) : '0.00'}</Text>
+                                <br />
+                                <Text type="secondary" style={{ fontSize: '12px' }}>
+                                  {record.is_paid ? (
+                                    <span style={{ color: '#52c41a' }}>✓ 已支付</span>
+                                  ) : (
+                                    <span style={{ color: '#ff4d4f' }}>✗ 未支付</span>
+                                  )}
+                                </Text>
+                              </div>
+                            ),
+                          },
+                          {
+                            title: '状态',
+                            dataIndex: 'status',
+                            key: 'status',
+                            width: 100,
+                            render: (status, record) => (
+                              <div>
+                                {getReservationStatusTag(status)}
+                                {record.order_id && (
+                                  <div style={{ fontSize: '11px', color: '#1890ff', marginTop: 2 }}>
+                                    订单 #{record.order_id}
+                                  </div>
+                                )}
+                              </div>
+                            ),
+                          },
+                          {
+                            title: '预定时间',
+                            dataIndex: 'created_at',
+                            key: 'created_at',
+                            width: 160,
+                            render: (text) => formatDate(text),
+                          },
+                          {
+                            title: '操作',
+                            key: 'action',
+                            width: 200,
+                            render: (_, record) => (
+                              <Space>
+                                {record.status === 'pending' && record.is_paid && (
+                                  <Button
+                                    type="primary"
+                                    size="small"
+                                    onClick={() => handleReservationStatusChange(record.id, 'confirmed')}
+                                  >
+                                    确认并转订单
+                                  </Button>
+                                )}
+                                {record.status === 'pending' && !record.is_paid && (
+                                  <Button
+                                    size="small"
+                                    disabled
+                                    title="需要先完成支付才能确认"
+                                  >
+                                    等待支付
+                                  </Button>
+                                )}
+                                {record.status === 'confirmed' && (
+                                  <div style={{ color: '#52c41a', fontSize: '12px' }}>
+                                    ✅ 已转为订单，请在订单管理中处理
+                                    {record.order_id && (
+                                      <div style={{ color: '#1890ff', marginTop: '2px' }}>
+                                        订单ID: #{record.order_id}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {record.status === 'pending' && (
+                                  <Button
+                                    danger
+                                    size="small"
+                                    onClick={() => handleReservationStatusChange(record.id, 'cancelled')}
+                                  >
+                                    取消
+                                  </Button>
+                                )}
+
+                              </Space>
+                            ),
+                          },
+                        ]}
+                        dataSource={getFilteredReservations()}
+                        rowKey="id"
+                        loading={reservationLoading}
+                        pagination={{
+                          total: getFilteredReservations().length,
+                          pageSize: 10,
+                          showSizeChanger: true,
+                          showQuickJumper: true,
+                          showTotal: (total) => `共 ${total} 个预定`,
                         }}
                         scroll={{ x: 1200 }}
                       />
@@ -2279,7 +2690,7 @@ const AdminPage = () => {
                             title: '创建时间',
                             dataIndex: 'created_at',
                             key: 'created_at',
-                            render: (text) => new Date(text).toLocaleString('zh-CN'),
+                            render: (text) => formatDate(text),
                           },
                           {
                             title: '操作',
@@ -2718,6 +3129,18 @@ const AdminPage = () => {
               </Form.Item>
 
               <Form.Item
+                name="reservation_enabled"
+                label="预定设置"
+                initialValue={true}
+                extra="开启后，商品售罄时顾客可以提交预定订单；关闭后，售罄时直接显示已售罄"
+              >
+                <Select>
+                  <Select.Option value={true}>允许预定</Select.Option>
+                  <Select.Option value={false}>不允许预定</Select.Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item
                 noStyle
                 shouldUpdate={(prevValues, currentValues) => 
                   prevValues.unlimited_supply !== currentValues.unlimited_supply
@@ -2827,6 +3250,14 @@ const AdminPage = () => {
                       <Text><strong>总金额:</strong> ¥{selectedOrder.total_amount}</Text>
                     </div>
                     <Text><strong>下单时间:</strong> {formatDate(selectedOrder.created_at)}</Text>
+                    {selectedOrder.notes && (
+                      <div style={{ marginTop: 8, padding: 12, backgroundColor: '#fff7e6', borderRadius: 6, border: '1px solid #ffd591' }}>
+                        <Text><strong>订单备注:</strong></Text>
+                        <div style={{ marginTop: 4, color: '#666', fontStyle: 'italic' }}>
+                          {selectedOrder.notes}
+                        </div>
+                      </div>
+                    )}
                   </Space>
                 </div>
 
@@ -3606,7 +4037,7 @@ const AdminPage = () => {
                   style={{ width: '100%' }}
                   precision={2}
                   formatter={(value) => `¥ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={(value) => value.replace(/¥\s?|(,*)/g, '')}
+                  parser={(value) => value.replace(/[¥\s,]/g, '')}
                 />
               </Form.Item>
               <Form.Item
@@ -4106,10 +4537,12 @@ const AdminPage = () => {
               centered
               zIndex={2000}
               style={{ zIndex: 2000 }}
-              bodyStyle={{ 
-                padding: isMobile ? 8 : 24,
-                maxHeight: isMobile ? '70vh' : 'auto',
-                overflow: 'auto'
+              styles={{
+                body: {
+                  padding: isMobile ? 8 : 24,
+                  maxHeight: isMobile ? '70vh' : 'auto',
+                  overflow: 'auto'
+                }
               }}
             >
               <div style={{ 

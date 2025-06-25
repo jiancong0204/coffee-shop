@@ -160,7 +160,8 @@ router.get('/', (req, res) => {
         const formattedProducts = productsWithTags.map(product => ({
           ...product,
           available: Boolean(product.available),
-          unlimited_supply: Boolean(product.unlimited_supply)
+          unlimited_supply: Boolean(product.unlimited_supply),
+          reservation_enabled: Boolean(product.reservation_enabled !== 0)
         }));
         res.json(formattedProducts);
       })
@@ -289,7 +290,8 @@ router.get('/admin/all', authenticateToken, requireAdmin, (req, res) => {
         const formattedProducts = productsWithTags.map(product => ({
           ...product,
           available: Boolean(product.available),
-          unlimited_supply: Boolean(product.unlimited_supply)
+          unlimited_supply: Boolean(product.unlimited_supply),
+          reservation_enabled: Boolean(product.reservation_enabled !== 0)
         }));
         res.json(formattedProducts);
       })
@@ -318,7 +320,8 @@ router.get('/:id', (req, res) => {
     const formattedProduct = {
       ...product,
       available: Boolean(product.available),
-      unlimited_supply: Boolean(product.unlimited_supply)
+      unlimited_supply: Boolean(product.unlimited_supply),
+      reservation_enabled: Boolean(product.reservation_enabled !== 0)
     };
     res.json(formattedProduct);
   });
@@ -344,15 +347,16 @@ router.post('/', authenticateToken, requireAdmin, [
     category, 
     image_url, 
     unlimited_supply = false, 
-    available_num = 100 
+    available_num = 100,
+    reservation_enabled = true
   } = req.body;
 
   // 如果是不限量供应，available_num 设为 NULL
   const finalAvailableNum = unlimited_supply ? null : available_num;
 
   db.run(
-    'INSERT INTO products (name, description, price, category, image_url, unlimited_supply, available_num) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [name, description || '', price, category, image_url || '', unlimited_supply, finalAvailableNum],
+    'INSERT INTO products (name, description, price, category, image_url, unlimited_supply, available_num, reservation_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [name, description || '', price, category, image_url || '', unlimited_supply, finalAvailableNum, reservation_enabled],
     function(err) {
       if (err) {
         console.error('Database error:', err);
@@ -369,7 +373,8 @@ router.post('/', authenticateToken, requireAdmin, [
         const formattedProduct = {
           ...product,
           available: Boolean(product.available),
-          unlimited_supply: Boolean(product.unlimited_supply)
+          unlimited_supply: Boolean(product.unlimited_supply),
+          reservation_enabled: Boolean(product.reservation_enabled !== 0)
         };
         res.status(201).json(formattedProduct);
       });
@@ -389,7 +394,7 @@ router.put('/:id', authenticateToken, requireAdmin, [
   }
 
   const { id } = req.params;
-  const { name, description, price, category, image_url, available, available_num, unlimited_supply } = req.body;
+  const { name, description, price, category, image_url, available, available_num, unlimited_supply, reservation_enabled } = req.body;
 
   // 构建更新SQL
   const updates = [];
@@ -427,6 +432,10 @@ router.put('/:id', authenticateToken, requireAdmin, [
     updates.push('unlimited_supply = ?');
     params.push(unlimited_supply);
   }
+  if (reservation_enabled !== undefined) {
+    updates.push('reservation_enabled = ?');
+    params.push(reservation_enabled);
+  }
 
   if (updates.length === 0) {
     return res.status(400).json({ error: '没有提供要更新的字段' });
@@ -455,7 +464,8 @@ router.put('/:id', authenticateToken, requireAdmin, [
       const formattedProduct = {
         ...product,
         available: Boolean(product.available),
-        unlimited_supply: Boolean(product.unlimited_supply)
+        unlimited_supply: Boolean(product.unlimited_supply),
+        reservation_enabled: Boolean(product.reservation_enabled !== 0)
       };
       res.json(formattedProduct);
     });

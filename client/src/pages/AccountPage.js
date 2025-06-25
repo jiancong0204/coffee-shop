@@ -4,6 +4,13 @@ import { UserOutlined, HistoryOutlined, LogoutOutlined, EditOutlined, TrophyOutl
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+// 配置dayjs插件
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -150,7 +157,7 @@ const AccountPage = () => {
                     <Col span={16}>
                       <Text>
                         {user.created_at 
-                          ? new Date(user.created_at).toLocaleString('zh-CN')
+                          ? dayjs.utc(user.created_at).tz('Asia/Shanghai').format('YYYY-MM-DD HH:mm:ss')
                           : '暂无记录'
                         }
                       </Text>

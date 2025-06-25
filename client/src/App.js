@@ -9,6 +9,7 @@ import AdminPage from './pages/AdminPage';
 import CartPage from './pages/CartPage';
 import OrdersPage from './pages/OrdersPage';
 import AccountPage from './pages/AccountPage';
+import ReservationsPage from './pages/ReservationsPage';
 import { useAuth } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
 
@@ -41,6 +42,7 @@ function App() {
               <Route path="/cart" element={<CartPage />} />
               <Route path="/account" element={<AccountPage />} />
               <Route path="/orders" element={<OrdersPage />} />
+              <Route path="/reservations" element={<ReservationsPage />} />
             </Routes>
           </div>
         </CartProvider>
