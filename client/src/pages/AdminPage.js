@@ -4102,10 +4102,22 @@ const AdminPage = () => {
               open={emojiPickerVisible}
               onCancel={() => setEmojiPickerVisible(false)}
               footer={null}
-              width={400}
+              width={isMobile ? '90%' : 400}
               centered
+              zIndex={2000}
+              style={{ zIndex: 2000 }}
+              bodyStyle={{ 
+                padding: isMobile ? 8 : 24,
+                maxHeight: isMobile ? '70vh' : 'auto',
+                overflow: 'auto'
+              }}
             >
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center',
+                width: '100%',
+                overflow: 'hidden'
+              }}>
                 <EmojiPicker
                   onEmojiClick={(emojiData) => {
                     // 判断当前是哪个表单在使用emoji选择器
@@ -4116,13 +4128,18 @@ const AdminPage = () => {
                     }
                     setEmojiPickerVisible(false);
                   }}
-                  width={350}
-                  height={400}
+                  width={isMobile ? '100%' : 350}
+                  height={isMobile ? 350 : 400}
                   searchDisabled={false}
                   skinTonesDisabled={true}
                   previewConfig={{
                     defaultEmoji: '⚙️',
                     defaultCaption: '选择一个emoji作为图标'
+                  }}
+                  style={{
+                    maxWidth: '100%',
+                    border: 'none',
+                    boxShadow: 'none'
                   }}
                 />
               </div>
