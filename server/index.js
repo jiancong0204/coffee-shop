@@ -18,6 +18,7 @@ const userRoutes = require('./routes/users');
 const tagRoutes = require('./routes/tags');
 const variantRoutes = require('./routes/variants');
 const categoryRoutes = require('./routes/categories');
+const reservationRoutes = require('./routes/reservations');
 
 const app = express();
 const PORT = config.port;
@@ -88,6 +89,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/tags', tagRoutes);
 app.use('/api/variants', variantRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/reservations', reservationRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {

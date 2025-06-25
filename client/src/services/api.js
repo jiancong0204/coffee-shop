@@ -180,8 +180,8 @@ class ApiService {
   }
 
   // 订单相关API
-  checkout() {
-    return this.post('/orders/checkout');
+  checkout(notes = '', selectedCartIds = []) {
+    return this.post('/orders/checkout', { notes, selectedCartIds });
   }
 
   getMyOrders() {
@@ -320,6 +320,37 @@ class ApiService {
 
   getCategoryStats(id) {
     return this.get(`/categories/${id}/stats`);
+  }
+
+  // 预定相关API
+  // 创建预定
+  createReservation(data) {
+    return this.post('/reservations', data);
+  }
+
+  // 获取用户预定列表
+  getMyReservations() {
+    return this.get('/reservations/my');
+  }
+
+  // 取消预定
+  cancelReservation(reservationId) {
+    return this.delete(`/reservations/${reservationId}`);
+  }
+
+  // 管理员获取所有预定
+  getAllReservationsAdmin(params = {}) {
+    return this.get('/reservations/admin/all', params);
+  }
+
+  // 管理员更新预定状态
+  updateReservationStatus(reservationId, data) {
+    return this.put(`/reservations/admin/${reservationId}/status`, data);
+  }
+
+  // 获取预定统计信息
+  getReservationStats() {
+    return this.get('/reservations/admin/stats');
   }
 }
 

@@ -8,6 +8,7 @@ const router = express.Router();
 // 创建订单（结账）
 router.post('/checkout', authenticateToken, (req, res) => {
   const userId = req.user.id;
+  const { notes, selectedCartIds } = req.body; // 获取备注信息和选中的购物车项目
 
   // 生成同一天内递增的取单号
   const generatePickupNumber = async () => {
@@ -40,9 +41,10 @@ router.post('/checkout', authenticateToken, (req, res) => {
     });
   };
 
-  // 获取购物车商品
-  const cartSql = `
+  // 获取购物车商品（支持部分结账）
+  let cartSql = `
     SELECT 
+      c.id as cart_id,
       c.product_id,
       c.quantity,
       c.variant_selections,
@@ -53,8 +55,17 @@ router.post('/checkout', authenticateToken, (req, res) => {
     JOIN products p ON c.product_id = p.id
     WHERE c.user_id = ?
   `;
+  
+  let cartParams = [userId];
+  
+  // 如果指定了选中的购物车项目，只处理这些项目
+  if (selectedCartIds && selectedCartIds.length > 0) {
+    const placeholders = selectedCartIds.map(() => '?').join(',');
+    cartSql += ` AND c.id IN (${placeholders})`;
+    cartParams = cartParams.concat(selectedCartIds);
+  }
 
-  db.all(cartSql, [userId], (err, cartItems) => {
+  db.all(cartSql, cartParams, (err, cartItems) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: '服务器错误' });
@@ -120,8 +131,8 @@ router.post('/checkout', authenticateToken, (req, res) => {
 
             // 创建订单
             db.run(
-              'INSERT INTO orders (user_id, pickup_number, total_amount, status) VALUES (?, ?, ?, ?)',
-              [userId, pickupNumber, totalAmount, 'pending'],
+              'INSERT INTO orders (user_id, pickup_number, total_amount, status, notes) VALUES (?, ?, ?, ?, ?)',
+              [userId, pickupNumber, totalAmount, 'pending', notes || null],
               function(err) {
                 if (err) {
                   if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -165,8 +176,18 @@ router.post('/checkout', authenticateToken, (req, res) => {
                       itemsAdded++;
                       
                       if (itemsAdded === cartItems.length) {
-                        // 清空购物车
-                        db.run('DELETE FROM cart WHERE user_id = ?', [userId], (err) => {
+                        // 清空选中的购物车项目
+                        let clearCartSql = 'DELETE FROM cart WHERE user_id = ?';
+                        let clearCartParams = [userId];
+                        
+                        // 如果是部分结账，只删除选中的项目
+                        if (selectedCartIds && selectedCartIds.length > 0) {
+                          const placeholders = selectedCartIds.map(() => '?').join(',');
+                          clearCartSql += ` AND id IN (${placeholders})`;
+                          clearCartParams = clearCartParams.concat(selectedCartIds);
+                        }
+                        
+                        db.run(clearCartSql, clearCartParams, (err) => {
                           if (err) {
                             console.error('Database error:', err);
                             db.run('ROLLBACK');
@@ -174,7 +195,7 @@ router.post('/checkout', authenticateToken, (req, res) => {
                             for (const reservation of stockReservations) {
                               productRoutes.increaseStock(reservation.productId, reservation.quantity, () => {});
                             }
-                            return res.status(500).json({ error: '清空购物车失败' });
+                            return res.status(500).json({ error: '清空选中商品失败' });
                           }
 
                           db.run('COMMIT');
@@ -225,6 +246,7 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
       o.total_amount,
       o.status,
       o.created_at,
+      o.notes,
       COUNT(oi.id) as item_count
     FROM orders o
     LEFT JOIN order_items oi ON o.id = oi.order_id
@@ -595,6 +617,7 @@ router.get('/admin/:order_id', authenticateToken, requireAdmin, (req, res) => {
       o.pickup_number,
       o.total_amount,
       o.status,
+      o.notes,
       o.created_at
     FROM orders o
     JOIN users u ON o.user_id = u.id

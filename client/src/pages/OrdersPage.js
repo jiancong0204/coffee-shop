@@ -4,6 +4,13 @@ import { HistoryOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+// 配置dayjs插件
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -46,7 +53,14 @@ const OrdersPage = () => {
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString('zh-CN');
+    if (!dateString) return '-';
+    try {
+      // 将UTC时间转换为本地时间（中国时区）
+      return dayjs.utc(dateString).tz('Asia/Shanghai').format('YYYY-MM-DD HH:mm:ss');
+    } catch (error) {
+      console.error('时间格式化错误:', error);
+      return '-';
+    }
   };
 
   const handleCancelOrder = async (orderId) => {
@@ -174,6 +188,16 @@ const OrdersPage = () => {
                             )}
                           </div>
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 订单备注显示 */}
+                  {order.notes && (
+                    <div style={{ marginBottom: 12, padding: 12, backgroundColor: '#fff7e6', borderRadius: 6, border: '1px solid #ffd591' }}>
+                      <Text strong style={{ fontSize: '13px', color: '#333' }}>订单备注：</Text>
+                      <div style={{ marginTop: 4, color: '#666', fontStyle: 'italic', fontSize: '13px' }}>
+                        {order.notes}
                       </div>
                     </div>
                   )}

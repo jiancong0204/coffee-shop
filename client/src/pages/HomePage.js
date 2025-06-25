@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Card, Button, Tabs, Typography, Row, Col, message, Image, Modal } from 'antd';
-import { PlusOutlined, MinusOutlined, ShoppingCartOutlined } from '@ant-design/icons';
+import { Layout, Card, Button, Tabs, Typography, Row, Col, message, Image, Modal, Tooltip } from 'antd';
+import { PlusOutlined, MinusOutlined, ShoppingCartOutlined, CalendarOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import api from '../services/api';
 import pinyin from 'pinyin';
 import ProductVariantSelector from '../components/ProductVariantSelector';
+import ReservationSelector from '../components/ReservationSelector';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -15,6 +16,7 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
   const [isUpdating, setIsUpdating] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [variantSelectorVisible, setVariantSelectorVisible] = useState(false);
+  const [reservationSelectorVisible, setReservationSelectorVisible] = useState(false);
   const { cartItems, addToCart, updateCartItem, removeFromCart, getProductQuantity, hasMultipleConfigurations } = useCart();
   
   // 检测屏幕尺寸
@@ -79,6 +81,29 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
       setSelectedProduct(null);
     } catch (error) {
       console.error('添加到购物车失败:', error);
+    }
+  };
+
+  // 显示预定选择器
+  const showReservationSelector = (product) => {
+    setSelectedProduct(product);
+    setReservationSelectorVisible(true);
+  };
+
+  // 确认预定
+  const handleReservationConfirm = async (reservationData) => {
+    console.log('开始创建预定:', reservationData);
+    
+    try {
+      const response = await api.createReservation(reservationData);
+      console.log('预定创建成功:', response);
+      message.success('预定成功！我们会尽快为您准备商品');
+      setReservationSelectorVisible(false);
+      setSelectedProduct(null);
+    } catch (error) {
+      console.error('预定创建失败:', error);
+      console.error('错误详情:', error.response?.data);
+      message.error(error.response?.data?.error || '预定失败，请重试');
     }
   };
 
@@ -171,14 +196,34 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
     // 如果商品缺货
     if (isOutOfStock) {
       return (
-        <Button
-          disabled
-          className="cart-button"
-          size={isMobile ? 'small' : 'default'}
-          style={{ color: '#ff4d4f', borderColor: '#ff4d4f' }}
+        <Tooltip 
+          title={
+            <div>
+              <div>📅 预定规则：</div>
+              <div>• 预定日期：明天至未来3天</div>
+              <div>• 预定数量：1-10份</div>
+              <div>• 需要立即支付</div>
+              <div>• 管理员确认后转为订单</div>
+            </div>
+          }
+          placement={isMobile ? 'top' : 'topRight'}
         >
-          已售罄
-        </Button>
+          <Button
+            icon={<CalendarOutlined />}
+            onClick={() => showReservationSelector(product)}
+            disabled={!product.available || isLoading}
+            loading={isLoading}
+            className="cart-button"
+            size={isMobile ? 'small' : 'default'}
+            style={{ 
+              color: '#1890ff', 
+              borderColor: '#1890ff',
+              backgroundColor: '#f0f8ff'
+            }}
+          >
+            {isMobile ? '预定' : '预定商品'}
+          </Button>
+        </Tooltip>
       );
     }
 
@@ -358,6 +403,17 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
           setSelectedProduct(null);
         }}
         onConfirm={handleVariantConfirm}
+        product={selectedProduct}
+      />
+
+      {/* 预定选择器 */}
+      <ReservationSelector
+        visible={reservationSelectorVisible}
+        onCancel={() => {
+          setReservationSelectorVisible(false);
+          setSelectedProduct(null);
+        }}
+        onConfirm={handleReservationConfirm}
         product={selectedProduct}
       />
     </div>
