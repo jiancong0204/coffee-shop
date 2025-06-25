@@ -296,6 +296,31 @@ class ApiService {
   updateMyUsername(username) {
     return this.put('/users/profile/username', { username });
   }
+
+  // 分类管理相关API
+  getAllCategories() {
+    return this.get('/categories');
+  }
+
+  getAllCategoriesAdmin() {
+    return this.get('/categories/admin/all');
+  }
+
+  createCategory(data) {
+    return this.post('/categories', data);
+  }
+
+  updateCategory(id, data) {
+    return this.put(`/categories/${id}`, data);
+  }
+
+  deleteCategory(id) {
+    return this.delete(`/categories/${id}`);
+  }
+
+  getCategoryStats(id) {
+    return this.get(`/categories/${id}/stats`);
+  }
 }
 
 const api = new ApiService();

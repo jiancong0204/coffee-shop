@@ -51,6 +51,28 @@ function initDatabase() {
       }
     });
 
+    // 分类表
+    db.run(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name VARCHAR(50) UNIQUE NOT NULL,
+        display_name VARCHAR(100) NOT NULL,
+        description TEXT,
+        emoji VARCHAR(10) DEFAULT '📦',
+        sort_order INTEGER DEFAULT 0,
+        enabled BOOLEAN DEFAULT true,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) {
+        console.error('Error creating categories table:', err);
+      } else {
+        console.log('Categories table created successfully');
+        // 检查是否需要添加emoji列到现有表
+        addEmojiColumnIfNotExists();
+      }
+    });
+
     // 商品表
     db.run(`
       CREATE TABLE IF NOT EXISTS products (
@@ -172,6 +194,7 @@ function initDatabase() {
         name VARCHAR(50) NOT NULL,
         display_name VARCHAR(100) NOT NULL,
         description TEXT,
+        emoji VARCHAR(10) DEFAULT '⚙️',
         is_required BOOLEAN DEFAULT false,
         sort_order INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -181,6 +204,8 @@ function initDatabase() {
         console.error('Error creating product_variant_types table:', err);
       } else {
         console.log('Product_variant_types table created successfully');
+        // 检查是否需要添加emoji列到现有表
+        addVariantTypeEmojiColumnIfNotExists();
       }
     });
 
@@ -272,10 +297,96 @@ function initDatabase() {
     // 所有表创建完成后，再执行数据初始化
     setTimeout(() => {
       createDefaultAdmin();
+      addDefaultCategories();
       addSampleProducts();
       addDefaultVariantTypes();
       generatePickupNumbersForExistingOrders();
     }, 1000);
+  });
+}
+
+// 为现有的categories表添加emoji列（如果不存在）
+function addEmojiColumnIfNotExists() {
+  db.all("PRAGMA table_info(categories)", (err, columns) => {
+    if (err) {
+      console.error('Error checking categories table structure:', err);
+      return;
+    }
+    
+    const hasEmojiColumn = columns.some(col => col.name === 'emoji');
+    if (!hasEmojiColumn) {
+      db.run("ALTER TABLE categories ADD COLUMN emoji VARCHAR(10) DEFAULT '📦'", (err) => {
+        if (err) {
+          console.error('Error adding emoji column:', err);
+        } else {
+          console.log('Added emoji column to categories table');
+          // 更新现有分类的emoji
+          updateExistingCategoriesEmoji();
+        }
+      });
+    }
+  });
+}
+
+// 更新现有分类的emoji
+function updateExistingCategoriesEmoji() {
+  const emojiUpdates = [
+    { name: 'coffee', emoji: '☕' },
+    { name: 'tea', emoji: '🍵' },
+    { name: 'dessert', emoji: '🧁' },
+    { name: 'snack', emoji: '🍪' }
+  ];
+  
+  emojiUpdates.forEach(update => {
+    db.run('UPDATE categories SET emoji = ? WHERE name = ?', [update.emoji, update.name], (err) => {
+      if (err) {
+        console.error(`Error updating emoji for ${update.name}:`, err);
+      } else {
+        console.log(`Updated emoji for ${update.name}: ${update.emoji}`);
+      }
+    });
+  });
+}
+
+// 为现有的product_variant_types表添加emoji列（如果不存在）
+function addVariantTypeEmojiColumnIfNotExists() {
+  db.all("PRAGMA table_info(product_variant_types)", (err, columns) => {
+    if (err) {
+      console.error('Error checking product_variant_types table structure:', err);
+      return;
+    }
+    
+    const hasEmojiColumn = columns.some(col => col.name === 'emoji');
+    if (!hasEmojiColumn) {
+      db.run("ALTER TABLE product_variant_types ADD COLUMN emoji VARCHAR(10) DEFAULT '⚙️'", (err) => {
+        if (err) {
+          console.error('Error adding emoji column to product_variant_types:', err);
+        } else {
+          console.log('Added emoji column to product_variant_types table');
+          // 更新现有细分类型的emoji
+          updateExistingVariantTypesEmoji();
+        }
+      });
+    }
+  });
+}
+
+// 更新现有细分类型的emoji
+function updateExistingVariantTypesEmoji() {
+  const emojiUpdates = [
+    { name: 'temperature', emoji: '🌡️' },
+    { name: 'sweetness', emoji: '🍯' },
+    { name: 'size', emoji: '📏' }
+  ];
+  
+  emojiUpdates.forEach(update => {
+    db.run('UPDATE product_variant_types SET emoji = ? WHERE name = ?', [update.emoji, update.name], (err) => {
+      if (err) {
+        console.error(`Error updating emoji for variant type ${update.name}:`, err);
+      } else {
+        console.log(`Updated emoji for variant type ${update.name}: ${update.emoji}`);
+      }
+    });
   });
 }
 
@@ -302,6 +413,39 @@ function createDefaultAdmin() {
         }
       );
     }
+  });
+}
+
+// 添加默认分类
+function addDefaultCategories() {
+  const defaultCategories = [
+    { name: 'coffee', display_name: '咖啡', description: '各种口味的咖啡饮品', emoji: '☕', sort_order: 1 },
+    { name: 'tea', display_name: '茶饮', description: '传统茶饮和奶茶系列', emoji: '🍵', sort_order: 2 },
+    { name: 'dessert', display_name: '甜品', description: '精美的蛋糕和甜点', emoji: '🧁', sort_order: 3 },
+    { name: 'snack', display_name: '小食', description: '各种小食和轻食', emoji: '🍪', sort_order: 4 }
+  ];
+
+  defaultCategories.forEach(category => {
+    db.get('SELECT * FROM categories WHERE name = ?', [category.name], (err, row) => {
+      if (err) {
+        console.error('Error checking category:', err);
+        return;
+      }
+      
+      if (!row) {
+        db.run(
+          'INSERT INTO categories (name, display_name, description, emoji, sort_order) VALUES (?, ?, ?, ?, ?)',
+          [category.name, category.display_name, category.description, category.emoji, category.sort_order],
+          (err) => {
+            if (err) {
+              console.error('Error adding default category:', err);
+            } else {
+              console.log(`Created default category: ${category.display_name} ${category.emoji}`);
+            }
+          }
+        );
+      }
+    });
   });
 }
 
@@ -339,6 +483,7 @@ function addDefaultVariantTypes() {
       name: 'temperature',
       display_name: '温度',
       description: '选择饮品温度',
+      emoji: '🌡️',
       is_required: false,
       sort_order: 1,
       options: [
@@ -352,6 +497,7 @@ function addDefaultVariantTypes() {
       name: 'sweetness',
       display_name: '糖度',
       description: '选择甜度',
+      emoji: '🍯',
       is_required: false,
       sort_order: 2,
       options: [
@@ -365,6 +511,7 @@ function addDefaultVariantTypes() {
       name: 'size',
       display_name: '杯型',
       description: '选择杯型大小',
+      emoji: '📏',
       is_required: false,
       sort_order: 3,
       options: [
@@ -387,8 +534,8 @@ function addDefaultVariantTypes() {
       if (!row) {
         // 创建细分类型
         db.run(
-          'INSERT INTO product_variant_types (name, display_name, description, is_required, sort_order) VALUES (?, ?, ?, ?, ?)',
-          [variantType.name, variantType.display_name, variantType.description, variantType.is_required, variantType.sort_order],
+          'INSERT INTO product_variant_types (name, display_name, description, emoji, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
+          [variantType.name, variantType.display_name, variantType.description, variantType.emoji, variantType.is_required, variantType.sort_order],
           function(err) {
             if (err) {
               console.error('Error adding variant type:', err);

@@ -480,18 +480,51 @@ router.delete('/:id', authenticateToken, requireAdmin, (req, res) => {
   });
 });
 
-// 获取商品分类（公开）
+// 获取商品分类（公开，已废弃，建议使用 /api/categories）
 router.get('/categories/list', (req, res) => {
+  // 从分类表获取启用的分类
   db.all(
-    'SELECT DISTINCT category FROM products WHERE available = true ORDER BY category',
+    'SELECT name, display_name FROM categories WHERE enabled = true ORDER BY sort_order, display_name',
     [],
     (err, rows) => {
       if (err) {
         console.error('Database error:', err);
-        return res.status(500).json({ error: '服务器错误' });
+        // 如果分类表查询失败，回退到从商品表获取
+        db.all(
+          'SELECT DISTINCT category FROM products WHERE available = true ORDER BY category',
+          [],
+          (err, rows) => {
+            if (err) {
+              console.error('Database error:', err);
+              return res.status(500).json({ error: '服务器错误' });
+            }
+            
+            const categories = rows.map(row => row.category);
+            res.json(categories);
+          }
+        );
+        return;
       }
       
-      const categories = rows.map(row => row.category);
+      // 如果没有分类，回退到从商品表获取
+      if (rows.length === 0) {
+        db.all(
+          'SELECT DISTINCT category FROM products WHERE available = true ORDER BY category',
+          [],
+          (err, rows) => {
+            if (err) {
+              console.error('Database error:', err);
+              return res.status(500).json({ error: '服务器错误' });
+            }
+            
+            const categories = rows.map(row => row.category);
+            res.json(categories);
+          }
+        );
+        return;
+      }
+      
+      const categories = rows.map(row => row.name);
       res.json(categories);
     }
   );

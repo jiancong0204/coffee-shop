@@ -178,11 +178,11 @@ router.post('/types', authenticateToken, requireAdmin, [
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { name, display_name, description, is_required = false, sort_order = 0 } = req.body;
+  const { name, display_name, description, emoji = '⚙️', is_required = false, sort_order = 0 } = req.body;
 
   db.run(
-    'INSERT INTO product_variant_types (name, display_name, description, is_required, sort_order) VALUES (?, ?, ?, ?, ?)',
-    [name, display_name, description, is_required, sort_order],
+    'INSERT INTO product_variant_types (name, display_name, description, emoji, is_required, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
+    [name, display_name, description, emoji, is_required, sort_order],
     function(err) {
       if (err) {
         console.error('Database error:', err);
@@ -208,7 +208,7 @@ router.post('/types', authenticateToken, requireAdmin, [
 // 更新细分类型（管理员）
 router.put('/types/:id', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { name, display_name, description, is_required, sort_order } = req.body;
+  const { name, display_name, description, emoji, is_required, sort_order } = req.body;
 
   const updates = [];
   const params = [];
@@ -224,6 +224,10 @@ router.put('/types/:id', authenticateToken, requireAdmin, (req, res) => {
   if (description !== undefined) {
     updates.push('description = ?');
     params.push(description);
+  }
+  if (emoji !== undefined) {
+    updates.push('emoji = ?');
+    params.push(emoji);
   }
   if (is_required !== undefined) {
     updates.push('is_required = ?');

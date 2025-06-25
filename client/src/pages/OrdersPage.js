@@ -113,20 +113,63 @@ const OrdersPage = () => {
                   
                   {/* 商品详情显示 */}
                   {order.items && order.items.length > 0 && (
-                    <div style={{ marginBottom: 12, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
-                      <Text strong style={{ fontSize: '13px', color: '#666' }}>商品详情：</Text>
-                      <div style={{ marginTop: 8 }}>
+                    <div style={{ marginBottom: 12, padding: 16, backgroundColor: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+                      <Text strong style={{ fontSize: '14px', color: '#333', marginBottom: 12, display: 'block' }}>
+                        订单详情
+                      </Text>
+                      <div style={{ marginTop: 12 }}>
                         {order.items.map((item, index) => (
-                          <div key={index} style={{ marginBottom: index < order.items.length - 1 ? 8 : 0 }}>
-                            <Text strong style={{ fontSize: '12px' }}>{item.name}</Text>
-                            <Text type="secondary" style={{ fontSize: '12px' }}> x{item.quantity}</Text>
+                          <div key={index} style={{ 
+                            marginBottom: index < order.items.length - 1 ? 16 : 0,
+                            paddingBottom: index < order.items.length - 1 ? 16 : 0,
+                            borderBottom: index < order.items.length - 1 ? '1px solid #f0f0f0' : 'none'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                              <div style={{ flex: 1 }}>
+                                <Text strong style={{ fontSize: '14px', color: '#333' }}>{item.name}</Text>
+                                <Text type="secondary" style={{ fontSize: '13px', marginLeft: 8 }}>
+                                  x{item.quantity}
+                                </Text>
+                              </div>
+                              <Text strong style={{ fontSize: '14px', color: '#ff4d4f' }}>
+                                ¥{(item.price * item.quantity).toFixed(2)}
+                              </Text>
+                            </div>
+                            
                             {item.variant_selections && item.variant_selections.length > 0 && (
-                              <div style={{ marginTop: 4 }}>
-                                {item.variant_selections.map((selection, selIndex) => (
-                                  <Tag key={selIndex} size="small" color="blue" style={{ margin: '0 4px 2px 0', fontSize: '10px' }}>
-                                    {selection.type_display_name}: {selection.option_display_name}
-                                  </Tag>
-                                ))}
+                              <div style={{ marginTop: 8, marginLeft: 8 }}>
+                                <Text type="secondary" style={{ fontSize: '12px', marginBottom: 4, display: 'block' }}>
+                                  规格选择：
+                                </Text>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                  {item.variant_selections.map((selection, selIndex) => (
+                                    <Tag 
+                                      key={selIndex} 
+                                      size="small" 
+                                      color="blue" 
+                                      style={{ 
+                                        fontSize: '11px',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px'
+                                      }}
+                                    >
+                                      {selection.type_display_name}: {selection.option_display_name}
+                                      {selection.price_adjustment > 0 && (
+                                        <span style={{ color: '#ff4d4f', marginLeft: 4 }}>
+                                          +¥{selection.price_adjustment}
+                                        </span>
+                                      )}
+                                    </Tag>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {item.description && (
+                              <div style={{ marginTop: 6, marginLeft: 8 }}>
+                                <Text type="secondary" style={{ fontSize: '12px' }}>
+                                  {item.description}
+                                </Text>
                               </div>
                             )}
                           </div>

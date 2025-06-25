@@ -395,11 +395,158 @@ const sortProductsByPinyin = (products) => {
   });
 };
 
+// 按分类和拼音排序商品
+const sortProductsByCategoryAndPinyin = (products) => {
+  // 定义分类顺序
+  const categoryOrder = {
+    'coffee': 1,
+    'tea': 2,
+    'dessert': 3,
+    'snack': 4
+  };
+
+  return products.sort((a, b) => {
+    // 首先按分类排序
+    const categoryA = categoryOrder[a.category] || 999;
+    const categoryB = categoryOrder[b.category] || 999;
+    
+    if (categoryA !== categoryB) {
+      return categoryA - categoryB;
+    }
+    
+    // 同分类内按拼音首字母排序
+    const pinyinA = pinyin(a.name, {
+      style: pinyin.STYLE_FIRST_LETTER,
+      heteronym: false
+    }).join('').toLowerCase();
+    
+    const pinyinB = pinyin(b.name, {
+      style: pinyin.STYLE_FIRST_LETTER,
+      heteronym: false
+    }).join('').toLowerCase();
+    
+    return pinyinA.localeCompare(pinyinB);
+  });
+};
+
+// 将商品按分类分组
+const groupProductsByCategory = (products) => {
+  const groups = {};
+  const categoryOrder = ['coffee', 'tea', 'dessert', 'snack'];
+  
+  // 按分类分组
+  products.forEach(product => {
+    if (!groups[product.category]) {
+      groups[product.category] = [];
+    }
+    groups[product.category].push(product);
+  });
+  
+  // 每个分组内按拼音排序
+  Object.keys(groups).forEach(category => {
+    groups[category] = sortProductsByPinyin(groups[category]);
+  });
+  
+  // 按预定义顺序返回分组
+  const result = [];
+  categoryOrder.forEach(category => {
+    if (groups[category] && groups[category].length > 0) {
+      result.push({
+        category,
+        products: groups[category]
+      });
+    }
+  });
+  
+  // 添加其他未定义顺序的分类
+  Object.keys(groups).forEach(category => {
+    if (!categoryOrder.includes(category)) {
+      result.push({
+        category,
+        products: groups[category]
+      });
+    }
+  });
+  
+  return result;
+};
+
+// 分组商品列表组件
+function GroupedProductList({ groupedProducts, categoryMap, categoryData, isAdmin, isLoggedIn, navigate }) {
+  const getCategoryName = (category) => {
+    const displayName = categoryMap[category] || category;
+    
+    // 尝试从分类数据中获取emoji
+    const categoryInfo = categoryData.find(cat => cat.name === category);
+    let emoji = '📦'; // 默认emoji
+    
+    // 如果有分类数据且包含emoji信息，使用数据库中的emoji
+    if (categoryInfo && categoryInfo.emoji) {
+      emoji = categoryInfo.emoji;
+    } else {
+      // 否则使用硬编码的映射作为后备
+      const emojiMap = {
+        'coffee': '☕',
+        'tea': '🍵', 
+        'dessert': '🧁',
+        'snack': '🍪'
+      };
+      emoji = emojiMap[category] || '📦';
+    }
+    
+    return `${emoji} ${displayName}`;
+  };
+
+  return (
+    <div>
+      {groupedProducts.map((group, groupIndex) => (
+        <div key={group.category} style={{ marginBottom: groupIndex < groupedProducts.length - 1 ? 32 : 0 }}>
+          {/* 分类标题 */}
+          <div style={{ 
+            marginBottom: 16, 
+            paddingBottom: 8, 
+            borderBottom: '2px solid #f0f0f0',
+            display: 'flex',
+            alignItems: 'center'
+          }}>
+            <Title level={3} style={{ 
+              margin: 0, 
+              color: '#8B4513',
+              fontSize: '20px',
+              fontWeight: 'bold'
+            }}>
+              {getCategoryName(group.category)}
+            </Title>
+            <Text style={{ 
+              marginLeft: 12, 
+              color: '#999',
+              fontSize: '14px'
+            }}>
+              ({group.products.length} 款)
+            </Text>
+          </div>
+          
+          {/* 该分类下的商品 */}
+          <ProductList 
+            products={group.products} 
+            isAdmin={isAdmin} 
+            isLoggedIn={isLoggedIn} 
+            navigate={navigate}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const HomePage = () => {
   const navigate = useNavigate();
   const { isLoggedIn, isAdmin } = useAuth();
   const [products, setProducts] = useState([]);
+  const [groupedProducts, setGroupedProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [categoryMap, setCategoryMap] = useState({});
+  const [categoryData, setCategoryData] = useState([]); // 保存完整的分类数据
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
 
@@ -413,9 +560,18 @@ const HomePage = () => {
   const fetchProducts = async (category = null) => {
     try {
       const response = await api.getProducts(category);
-      // 按拼音首字母排序商品
-      const sortedProducts = sortProductsByPinyin(response.data);
-      setProducts(sortedProducts);
+      
+      if (category === null) {
+        // 全部商品时，按分类分组
+        const grouped = groupProductsByCategory(response.data);
+        setGroupedProducts(grouped);
+        setProducts([]);
+      } else {
+        // 特定分类时，只按拼音排序
+        const sortedProducts = sortProductsByPinyin(response.data);
+        setProducts(sortedProducts);
+        setGroupedProducts([]);
+      }
     } catch (error) {
       message.error('获取商品失败');
     } finally {
@@ -425,10 +581,45 @@ const HomePage = () => {
 
   const fetchCategories = async () => {
     try {
-      const response = await api.getCategories();
-      setCategories(['all', ...response.data]);
+      // 尝试从新的分类API获取
+      try {
+        const response = await api.getAllCategories();
+        const categoryDataList = response.data.data || [];
+        const categoryNames = categoryDataList.map(cat => cat.name);
+        setCategories(['all', ...categoryNames]);
+        setCategoryData(categoryDataList); // 保存完整的分类数据
+        
+        // 更新分类映射（用于显示名称）
+        const newCategoryMap = {};
+        categoryDataList.forEach(cat => {
+          newCategoryMap[cat.name] = cat.display_name;
+        });
+        setCategoryMap({ 'all': '全部', ...newCategoryMap });
+      } catch (newApiError) {
+        // 如果新API失败，回退到旧API
+        console.warn('新分类API失败，使用旧API:', newApiError);
+        const response = await api.getCategories();
+        setCategories(['all', ...response.data]);
+        // 保持默认的分类映射
+        setCategoryMap({
+          'all': '全部',
+          'coffee': '咖啡',
+          'tea': '茶饮',
+          'dessert': '甜品',
+          'snack': '小食'
+        });
+      }
     } catch (error) {
       console.error('获取分类失败:', error);
+      // 使用默认分类
+      setCategories(['all', 'coffee', 'tea', 'dessert', 'snack']);
+      setCategoryMap({
+        'all': '全部',
+        'coffee': '咖啡',
+        'tea': '茶饮',
+        'dessert': '甜品',
+        'snack': '小食'
+      });
     }
   };
 
@@ -441,14 +632,32 @@ const HomePage = () => {
 
 
   const getCategoryName = (category) => {
-    const categoryMap = {
-      'all': '全部',
-      'coffee': '咖啡',
-      'tea': '茶饮',
-      'dessert': '甜品',
-      'snack': '小食'
-    };
-    return categoryMap[category] || category;
+    const displayName = categoryMap[category] || category;
+    
+    // 为"全部"分类添加特殊处理
+    if (category === 'all') {
+      return `📋 ${displayName}`;
+    }
+    
+    // 尝试从分类数据中获取emoji
+    const categoryInfo = categoryData.find(cat => cat.name === category);
+    let emoji = '📦'; // 默认emoji
+    
+    // 如果有分类数据且包含emoji信息，使用数据库中的emoji
+    if (categoryInfo && categoryInfo.emoji) {
+      emoji = categoryInfo.emoji;
+    } else {
+      // 否则使用硬编码的映射作为后备
+      const emojiMap = {
+        'coffee': '☕',
+        'tea': '🍵', 
+        'dessert': '🧁',
+        'snack': '🍪'
+      };
+      emoji = emojiMap[category] || '📦';
+    }
+    
+    return `${emoji} ${displayName}`;
   };
 
   const tabItems = categories.map(category => ({
@@ -523,7 +732,18 @@ const HomePage = () => {
                 加载中...
               </Text>
             </div>
+          ) : selectedCategory === 'all' ? (
+            // 显示分组商品列表
+            <GroupedProductList 
+              groupedProducts={groupedProducts} 
+              categoryMap={categoryMap}
+              categoryData={categoryData}
+              isAdmin={isAdmin()} 
+              isLoggedIn={isLoggedIn()} 
+              navigate={navigate}
+            />
           ) : (
+            // 显示单一分类商品列表
             <ProductList 
               products={products} 
               isAdmin={isAdmin()} 
@@ -532,7 +752,8 @@ const HomePage = () => {
             />
           )}
 
-          {products.length === 0 && !loading && (
+          {((selectedCategory === 'all' && groupedProducts.length === 0) || 
+            (selectedCategory !== 'all' && products.length === 0)) && !loading && (
             <div style={{ textAlign: 'center', padding: '50px 0' }}>
               <Text type="secondary" style={{ fontSize: '16px' }}>
                 {isAdmin() ? '暂无商品，请先添加商品' : '暂无商品'}

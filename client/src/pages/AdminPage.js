@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, Card, Table, Button, Modal, Form, Input, InputNumber, Select, message, Space, Popconfirm, Typography, Tabs, Tag, Badge, Upload, Image, Checkbox } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined, ShoppingOutlined, CheckOutlined, ClockCircleOutlined, EyeOutlined, UserOutlined, LockOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined, ShoppingOutlined, CheckOutlined, ClockCircleOutlined, EyeOutlined, UserOutlined, LockOutlined, UploadOutlined, InboxOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import EmojiPicker from 'emoji-picker-react';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -13,6 +14,18 @@ const { TabPane } = Tabs;
 const AdminPage = () => {
   const navigate = useNavigate();
   const { isLoggedIn, isAdmin } = useAuth();
+  
+  // 检测屏幕尺寸的hook
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +47,16 @@ const AdminPage = () => {
   const [customers, setCustomers] = useState([]);
   const [customerLoading, setCustomerLoading] = useState(false);
 
+  // 分类管理相关状态
+  const [categories, setCategories] = useState([]);
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryForm] = Form.useForm();
+
+  // 商品管理子视图状态 ('products' | 'categories' | 'variants')
+  const [productSubView, setProductSubView] = useState('products');
+
   
   // 细分类型管理相关状态
   const [variantTypes, setVariantTypes] = useState([]);
@@ -53,7 +76,6 @@ const AdminPage = () => {
   const [optionConfigForm] = Form.useForm(); // 选项配置表单
   const [variantTypeForm] = Form.useForm();
   const [variantOptionForm] = Form.useForm();
-  const [productVariantForm] = Form.useForm();
   const [addVariantForm] = Form.useForm();
   const [editVariantConfigModalVisible, setEditVariantConfigModalVisible] = useState(false); // 编辑细分配置模态框
   const [editingVariantConfig, setEditingVariantConfig] = useState(null); // 当前编辑的细分配置
@@ -83,6 +105,18 @@ const AdminPage = () => {
   const [editUsernameModalVisible, setEditUsernameModalVisible] = useState(false); // 编辑用户名模态框
   const [editingCustomer, setEditingCustomer] = useState(null); // 当前编辑的顾客
   const [usernameForm] = Form.useForm(); // 用户名编辑表单
+  
+  // Emoji选择器相关状态
+  const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
+  const [selectedEmoji, setSelectedEmoji] = useState('');
+
+  // 商品筛选相关状态
+  const [productFilters, setProductFilters] = useState({
+    category: 'all',      // 分类筛选
+    status: 'all',        // 状态筛选（可用/不可用）
+    inventory: 'all',     // 库存筛选（有库存/无库存/不限量）
+    search: ''            // 搜索关键词
+  });
 
   useEffect(() => {
     if (!isLoggedIn() || !isAdmin()) {
@@ -93,6 +127,7 @@ const AdminPage = () => {
     fetchOrders();
     fetchAdminList();
     fetchAllTags();
+    fetchCategories(); // 确保分类数据在初始化时就加载
     
     // 根据当前标签页加载对应数据
     if (activeTab === 'customers') {
@@ -104,10 +139,15 @@ const AdminPage = () => {
   useEffect(() => {
     if (activeTab === 'customers' && (!customers || customers.length === 0)) {
       fetchCustomers();
-    } else if (activeTab === 'variants' && (!variantTypes || variantTypes.length === 0)) {
-      fetchVariantTypes();
+    } else if (activeTab === 'products') {
+      // 商品管理tab下，根据子视图加载对应数据
+      if (productSubView === 'variants' && (!variantTypes || variantTypes.length === 0)) {
+        fetchVariantTypes();
+      } else if (productSubView === 'categories' && (!categories || categories.length === 0)) {
+        fetchCategories();
+      }
     }
-  }, [activeTab]);
+  }, [activeTab, productSubView]);
 
   const fetchProducts = async () => {
     try {
@@ -305,7 +345,12 @@ const AdminPage = () => {
       title: '分类',
       dataIndex: 'category',
       key: 'category',
-      width: 80
+      width: 80,
+      render: (category) => {
+        // 从分类列表中找到对应的显示名称
+        const categoryItem = categories.find(cat => cat.name === category);
+        return categoryItem ? categoryItem.display_name : category;
+      }
     },
     {
       title: '状态',
@@ -736,33 +781,94 @@ const AdminPage = () => {
     setSelectedOrderForStatus(null);
   };
 
-  // 获取排序后的商品列表
+  // 获取筛选和排序后的商品列表
   const getSortedProducts = () => {
-    const productList = [...(products || [])];
+    if (!products || products.length === 0) return [];
     
+    let filteredProducts = [...products];
+    
+    // 应用筛选条件
+    if (productFilters.category !== 'all') {
+      filteredProducts = filteredProducts.filter(product => product.category === productFilters.category);
+    }
+    
+    if (productFilters.status !== 'all') {
+      if (productFilters.status === 'available') {
+        filteredProducts = filteredProducts.filter(product => product.available);
+      } else if (productFilters.status === 'unavailable') {
+        filteredProducts = filteredProducts.filter(product => !product.available);
+      }
+    }
+    
+    if (productFilters.inventory !== 'all') {
+      if (productFilters.inventory === 'unlimited') {
+        filteredProducts = filteredProducts.filter(product => product.unlimited_supply);
+      } else if (productFilters.inventory === 'in_stock') {
+        filteredProducts = filteredProducts.filter(product => !product.unlimited_supply && (product.available_num || 0) > 0);
+      } else if (productFilters.inventory === 'out_of_stock') {
+        filteredProducts = filteredProducts.filter(product => !product.unlimited_supply && (product.available_num || 0) === 0);
+      }
+    }
+    
+    // 搜索关键词筛选
+    if (productFilters.search.trim()) {
+      const searchTerm = productFilters.search.toLowerCase().trim();
+      filteredProducts = filteredProducts.filter(product => 
+        product.name.toLowerCase().includes(searchTerm) ||
+        (product.description && product.description.toLowerCase().includes(searchTerm))
+      );
+    }
+    
+    // 应用排序
     switch (productSortType) {
       case 'id-asc':
-        return productList.sort((a, b) => a.id - b.id);
+        filteredProducts.sort((a, b) => a.id - b.id);
+        break;
       case 'id-desc':
-        return productList.sort((a, b) => b.id - a.id);
+        filteredProducts.sort((a, b) => b.id - a.id);
+        break;
       case 'name-pinyin':
-        return productList.sort((a, b) => {
+        filteredProducts.sort((a, b) => {
           // 使用 localeCompare 进行中文拼音排序
           return a.name.localeCompare(b.name, 'zh-Hans-CN', { sensitivity: 'accent' });
         });
+        break;
       case 'price-asc':
-        return productList.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+        filteredProducts.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+        break;
       case 'price-desc':
-        return productList.sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
+        filteredProducts.sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
+        break;
       default:
         // 默认使用ID升序
-        return productList.sort((a, b) => a.id - b.id);
+        filteredProducts.sort((a, b) => a.id - b.id);
+        break;
     }
+    
+    return filteredProducts;
   };
 
   // 处理商品排序变化
   const handleProductSort = (sortType) => {
     setProductSortType(sortType);
+  };
+
+  // 处理商品筛选变化
+  const handleProductFilter = (filterType, value) => {
+    setProductFilters(prev => ({
+      ...prev,
+      [filterType]: value
+    }));
+  };
+
+  // 重置商品筛选
+  const resetProductFilters = () => {
+    setProductFilters({
+      category: 'all',
+      status: 'all',
+      inventory: 'all',
+      search: ''
+    });
   };
 
   // 获取筛选后的订单列表
@@ -1201,6 +1307,107 @@ const AdminPage = () => {
     });
   };
 
+  // 分类管理相关函数
+  const fetchCategories = async () => {
+    try {
+      setCategoryLoading(true);
+      const response = await api.getAllCategoriesAdmin();
+      setCategories(response.data.data || []);
+    } catch (error) {
+      message.error('获取分类失败');
+      setCategories([]);
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
+  const showCategoryModal = (category = null) => {
+    setEditingCategory(category);
+    setCategoryModalVisible(true);
+    
+    if (category) {
+      categoryForm.setFieldsValue({
+        name: category.name,
+        display_name: category.display_name,
+        description: category.description || '',
+        sort_order: category.sort_order || 0,
+        enabled: category.enabled
+      });
+    } else {
+      categoryForm.resetFields();
+      categoryForm.setFieldsValue({
+        enabled: true,
+        sort_order: 0
+      });
+    }
+  };
+
+  const handleCategorySubmit = async (values) => {
+    try {
+      if (editingCategory) {
+        await api.updateCategory(editingCategory.id, values);
+        message.success('分类更新成功');
+      } else {
+        await api.createCategory(values);
+        message.success('分类创建成功');
+      }
+      
+      setCategoryModalVisible(false);
+      categoryForm.resetFields();
+      setEditingCategory(null);
+      fetchCategories();
+      
+      // 如果修改了分类，刷新商品列表
+      fetchProducts();
+    } catch (error) {
+      const errorMsg = error.response?.data?.error || error.message || '操作失败';
+      message.error(errorMsg);
+    }
+  };
+
+  const handleDeleteCategory = (category) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除分类 "${category.display_name}" 吗？`,
+      okText: '确认删除',
+      cancelText: '取消',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await api.deleteCategory(category.id);
+          message.success('分类删除成功');
+          fetchCategories();
+          // 刷新商品列表
+          fetchProducts();
+        } catch (error) {
+          const errorMsg = error.response?.data?.error || error.message || '删除失败';
+          message.error(errorMsg);
+        }
+      },
+    });
+  };
+
+  const getCategoryStats = async (category) => {
+    try {
+      const response = await api.getCategoryStats(category.id);
+      const stats = response.data.data.stats;
+      Modal.info({
+        title: `分类统计 - ${category.display_name}`,
+        content: (
+          <div>
+            <p>分类名称: {category.name}</p>
+            <p>显示名称: {category.display_name}</p>
+            <p>描述: {category.description || '无'}</p>
+            <p>关联商品数量: {stats.product_count} 个</p>
+            <p>状态: {category.enabled ? '启用' : '禁用'}</p>
+          </div>
+        ),
+      });
+    } catch (error) {
+      message.error('获取分类统计失败');
+    }
+  };
+
   // 管理员列表表格列
   const adminColumns = [
     {
@@ -1463,178 +1670,561 @@ const AdminPage = () => {
                   ),
                   children: (
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                        <Title level={3} style={{ margin: 0 }}>
-                          商品管理
-                        </Title>
-                        <Button
-                          type="primary"
-                          icon={<PlusOutlined />}
-                          onClick={() => showModal()}
-                        >
-                          添加商品
-                        </Button>
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: isMobile ? 'column' : 'row',
+                        justifyContent: 'space-between', 
+                        alignItems: isMobile ? 'stretch' : 'center', 
+                        marginBottom: 24,
+                        gap: isMobile ? 16 : 0
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          flexDirection: isMobile ? 'column' : 'row',
+                          alignItems: isMobile ? 'flex-start' : 'center', 
+                          gap: isMobile ? 12 : 16 
+                        }}>
+                          <Title level={3} style={{ margin: 0 }}>
+                            {productSubView === 'products' && '商品管理'}
+                            {productSubView === 'categories' && '分类管理'}
+                            {productSubView === 'variants' && '细分管理'}
+                          </Title>
+                          
+                          {productSubView !== 'products' && (
+                            <Button
+                              icon={<ArrowLeftOutlined />}
+                              onClick={() => setProductSubView('products')}
+                              style={{ width: isMobile ? '100%' : 'auto' }}
+                            >
+                              返回商品管理
+                            </Button>
+                          )}
+                        </div>
+                        
+                        <div style={{ 
+                          display: 'flex',
+                          flexDirection: isMobile ? 'column' : 'row',
+                          gap: isMobile ? 8 : 8,
+                          width: isMobile ? '100%' : 'auto'
+                        }}>
+                          {productSubView === 'products' && (
+                            <>
+                              <Button
+                                icon={<SettingOutlined />}
+                                onClick={() => {
+                                  setProductSubView('categories');
+                                  if (!categories || categories.length === 0) {
+                                    fetchCategories();
+                                  }
+                                }}
+                                style={{ width: isMobile ? '100%' : 'auto' }}
+                              >
+                                分类管理
+                              </Button>
+                              <Button
+                                icon={<SettingOutlined />}
+                                onClick={() => {
+                                  setProductSubView('variants');
+                                  if (!variantTypes || variantTypes.length === 0) {
+                                    fetchVariantTypes();
+                                  }
+                                }}
+                                style={{ width: isMobile ? '100%' : 'auto' }}
+                              >
+                                细分管理
+                              </Button>
+                              <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => showModal()}
+                                style={{ width: isMobile ? '100%' : 'auto' }}
+                              >
+                                添加商品
+                              </Button>
+                            </>
+                          )}
+                          
+                          {productSubView === 'categories' && (
+                            <Button
+                              type="primary"
+                              icon={<PlusOutlined />}
+                              onClick={() => showCategoryModal()}
+                              style={{ width: isMobile ? '100%' : 'auto' }}
+                            >
+                              添加分类
+                            </Button>
+                          )}
+                          
+                          {productSubView === 'variants' && (
+                            <Button
+                              type="primary"
+                              icon={<PlusOutlined />}
+                              onClick={() => showVariantTypeModal()}
+                              style={{ width: isMobile ? '100%' : 'auto' }}
+                            >
+                              添加细分类型
+                            </Button>
+                          )}
+                        </div>
                       </div>
 
-                      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Space>
-                          <Text>排序方式：</Text>
-                          <Select
-                            value={productSortType}
-                            style={{ width: 180 }}
-                            onChange={handleProductSort}
-                          >
-                            <Select.Option value="id-asc">ID 升序 ↑</Select.Option>
-                            <Select.Option value="id-desc">ID 降序 ↓</Select.Option>
-                            <Select.Option value="name-pinyin">名称拼音 A-Z</Select.Option>
-                            <Select.Option value="price-asc">价格升序 ↑</Select.Option>
-                            <Select.Option value="price-desc">价格降序 ↓</Select.Option>
-                          </Select>
-                        </Space>
-                        <Text type="secondary">
-                          共 {(products || []).length} 个商品
-                        </Text>
-                      </div>
-
-                      <Table
-                        columns={productColumns}
-                        dataSource={getSortedProducts()}
-                        rowKey="id"
-                        loading={loading}
-                        pagination={{
-                          total: (products || []).length,
-                          pageSize: 10,
-                          showSizeChanger: true,
-                          showQuickJumper: true,
-                          showTotal: (total) => `共 ${total} 个商品`,
-                        }}
-                        scroll={{ x: 970 }}
-                      />
-                    </div>
-                  )
-                },
-                {
-                  key: 'variants',
-                  label: (
-                    <span>
-                      <SettingOutlined style={{ marginRight: 8 }} />
-                      细分管理
-                    </span>
-                  ),
-                  children: (
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                        <Title level={3} style={{ margin: 0 }}>
-                          商品细分类型管理
-                        </Title>
-                        <Button
-                          type="primary"
-                          icon={<PlusOutlined />}
-                          onClick={() => showVariantTypeModal()}
-                        >
-                          添加细分类型
-                        </Button>
-                      </div>
-
-                      <div style={{ marginBottom: 16 }}>
-                        <Text type="secondary">
-                          共 {(variantTypes || []).length} 个细分类型
-                        </Text>
-                      </div>
-
-                      {variantTypes.map(variantType => (
-                        <Card
-                          key={variantType.id}
-                          title={
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span>
-                                <SettingOutlined style={{ marginRight: 8 }} />
-                                {variantType.display_name}
-                                {variantType.is_required && <Text style={{ color: '#f50', marginLeft: 8 }}>*必选</Text>}
-                              </span>
-                              <Space>
-                                <Button
-                                  size="small"
-                                  icon={<PlusOutlined />}
-                                  onClick={() => showVariantOptionModal(variantType)}
-                                >
-                                  添加选项
-                                </Button>
-                                <Button
-                                  size="small"
-                                  icon={<EditOutlined />}
-                                  onClick={() => showVariantTypeModal(variantType)}
-                                >
-                                  编辑
-                                </Button>
-                                <Button
-                                  size="small"
-                                  danger
-                                  icon={<DeleteOutlined />}
-                                  onClick={() => handleDeleteVariantType(variantType)}
-                                >
-                                  删除
-                                </Button>
-                              </Space>
+                      {/* 商品列表视图 */}
+                      {productSubView === 'products' && (
+                        <div>
+                          {/* 筛选和排序控件 */}
+                          <div style={{ marginBottom: 16, padding: 16, backgroundColor: '#fafafa', borderRadius: 8 }}>
+                            {/* 第一行：排序 */}
+                            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
+                              <Text strong style={{ minWidth: 60 }}>排序：</Text>
+                              <Select
+                                value={productSortType}
+                                style={{ width: 180 }}
+                                onChange={handleProductSort}
+                              >
+                                <Select.Option value="id-asc">ID 升序 ↑</Select.Option>
+                                <Select.Option value="id-desc">ID 降序 ↓</Select.Option>
+                                <Select.Option value="name-pinyin">名称拼音 A-Z</Select.Option>
+                                <Select.Option value="price-asc">价格升序 ↑</Select.Option>
+                                <Select.Option value="price-desc">价格降序 ↓</Select.Option>
+                              </Select>
                             </div>
-                          }
-                          style={{ marginBottom: 16 }}
-                        >
-                          <div>
-                            <Text type="secondary">{variantType.description}</Text>
-                            <div style={{ marginTop: 12 }}>
-                              <Text strong>选项列表：</Text>
-                              <div style={{ marginTop: 8 }}>
-                                {variantType.options && variantType.options.length > 0 ? (
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                    {variantType.options.map(option => (
-                                      <div key={option.id} style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        padding: '4px 8px', 
-                                        border: '1px solid #d9d9d9', 
-                                        borderRadius: 4,
-                                        marginBottom: 4
-                                      }}>
-                                        <span>{option.display_name}</span>
-                                        {option.price_adjustment !== 0 && (
-                                          <Text style={{ 
-                                            marginLeft: 4, 
-                                            color: option.price_adjustment > 0 ? '#f50' : '#52c41a' 
-                                          }}>
-                                            ({option.price_adjustment > 0 ? '+' : ''}¥{option.price_adjustment})
-                                          </Text>
-                                        )}
-                                        <Button
-                                          type="text"
-                                          size="small"
-                                          icon={<EditOutlined />}
-                                          onClick={() => showVariantOptionModal(variantType, option)}
-                                          style={{ marginLeft: 4, padding: 0, width: 16, height: 16 }}
-                                        />
-                                        <Button
-                                          type="text"
-                                          size="small"
-                                          danger
-                                          icon={<DeleteOutlined />}
-                                          onClick={() => handleDeleteVariantOption(option)}
-                                          style={{ marginLeft: 2, padding: 0, width: 16, height: 16 }}
-                                        />
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <Text type="secondary">暂无选项，请先添加选项</Text>
+
+                            {/* 第二行：搜索 */}
+                            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
+                              <Text strong style={{ minWidth: 60 }}>搜索：</Text>
+                              <Input
+                                placeholder="搜索商品名称或描述"
+                                value={productFilters.search}
+                                onChange={(e) => handleProductFilter('search', e.target.value)}
+                                allowClear
+                                style={{ flex: 1, maxWidth: 400 }}
+                              />
+                            </div>
+
+                            {/* 第三行：筛选 */}
+                            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                              <Text strong style={{ minWidth: 60 }}>筛选：</Text>
+                              
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Text>分类：</Text>
+                                <Select
+                                  value={productFilters.category}
+                                  style={{ width: 120 }}
+                                  onChange={(value) => handleProductFilter('category', value)}
+                                >
+                                  <Select.Option value="all">全部</Select.Option>
+                                  {(categories || []).map(category => (
+                                    <Select.Option key={category.name} value={category.name}>
+                                      {category.emoji} {category.display_name}
+                                    </Select.Option>
+                                  ))}
+                                </Select>
+                              </div>
+                              
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Text>状态：</Text>
+                                <Select
+                                  value={productFilters.status}
+                                  style={{ width: 100 }}
+                                  onChange={(value) => handleProductFilter('status', value)}
+                                >
+                                  <Select.Option value="all">全部</Select.Option>
+                                  <Select.Option value="available">可用</Select.Option>
+                                  <Select.Option value="unavailable">不可用</Select.Option>
+                                </Select>
+                              </div>
+                              
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Text>库存：</Text>
+                                <Select
+                                  value={productFilters.inventory}
+                                  style={{ width: 100 }}
+                                  onChange={(value) => handleProductFilter('inventory', value)}
+                                >
+                                  <Select.Option value="all">全部</Select.Option>
+                                  <Select.Option value="unlimited">不限量</Select.Option>
+                                  <Select.Option value="in_stock">有库存</Select.Option>
+                                  <Select.Option value="out_of_stock">无库存</Select.Option>
+                                </Select>
+                              </div>
+                              
+                              <Button onClick={resetProductFilters} type="default">
+                                重置筛选
+                              </Button>
+                            </div>
+                            
+                            {/* 统计信息和活跃筛选条件 */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: '1px solid #f0f0f0' }}>
+                              <Text type="secondary">
+                                显示 {getSortedProducts().length} / {(products || []).length} 个商品
+                              </Text>
+                              {/* 活跃筛选条件提示 */}
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                {productFilters.search && (
+                                  <Tag closable onClose={() => handleProductFilter('search', '')}>
+                                    搜索: {productFilters.search}
+                                  </Tag>
+                                )}
+                                {productFilters.category !== 'all' && (
+                                  <Tag closable onClose={() => handleProductFilter('category', 'all')}>
+                                    分类: {(() => {
+                                      const category = categories.find(cat => cat.name === productFilters.category);
+                                      return category ? category.display_name : productFilters.category;
+                                    })()}
+                                  </Tag>
+                                )}
+                                {productFilters.status !== 'all' && (
+                                  <Tag closable onClose={() => handleProductFilter('status', 'all')}>
+                                    状态: {productFilters.status === 'available' ? '可用' : '不可用'}
+                                  </Tag>
+                                )}
+                                {productFilters.inventory !== 'all' && (
+                                  <Tag closable onClose={() => handleProductFilter('inventory', 'all')}>
+                                    库存: {(() => {
+                                      const inventoryMap = {
+                                        'unlimited': '不限量',
+                                        'in_stock': '有库存',
+                                        'out_of_stock': '无库存'
+                                      };
+                                      return inventoryMap[productFilters.inventory];
+                                    })()}
+                                  </Tag>
                                 )}
                               </div>
                             </div>
                           </div>
-                        </Card>
-                      ))}
 
-                      {variantTypes.length === 0 && !variantTypeLoading && (
-                        <div style={{ textAlign: 'center', padding: '50px 0' }}>
-                          <Text type="secondary">暂无细分类型，请先添加细分类型</Text>
+                          <Table
+                            columns={productColumns}
+                            dataSource={getSortedProducts()}
+                            rowKey="id"
+                            loading={loading}
+                            pagination={{
+                              total: getSortedProducts().length,
+                              pageSize: 10,
+                              showSizeChanger: true,
+                              showQuickJumper: true,
+                              showTotal: (total, range) => {
+                                const filteredCount = getSortedProducts().length;
+                                const totalCount = (products || []).length;
+                                if (filteredCount === totalCount) {
+                                  return `共 ${total} 个商品`;
+                                } else {
+                                  return `显示 ${range[0]}-${range[1]} 项，共 ${filteredCount} 个商品（总计 ${totalCount} 个）`;
+                                }
+                              },
+                            }}
+                            scroll={{ x: 970 }}
+                          />
+                        </div>
+                      )}
+
+                      {/* 分类管理视图 */}
+                      {productSubView === 'categories' && (
+                        <div>
+                          <div style={{ marginBottom: 16 }}>
+                            <Text type="secondary">
+                              共 {(categories || []).length} 个分类
+                            </Text>
+                          </div>
+
+                          <Table
+                            columns={[
+                              {
+                                title: 'ID',
+                                dataIndex: 'id',
+                                key: 'id',
+                                width: 80,
+                              },
+                              {
+                                title: '分类名称',
+                                dataIndex: 'name',
+                                key: 'name',
+                                width: 120,
+                                render: (text) => <Text code>{text}</Text>,
+                              },
+                              {
+                                title: '显示名称',
+                                dataIndex: 'display_name',
+                                key: 'display_name',
+                                width: 150,
+                                render: (text) => <Text strong>{text}</Text>,
+                              },
+                              {
+                                title: 'Emoji',
+                                dataIndex: 'emoji',
+                                key: 'emoji',
+                                width: 80,
+                                render: (emoji) => (
+                                  <span style={{ fontSize: '20px' }}>{emoji || '📦'}</span>
+                                ),
+                              },
+                              {
+                                title: '描述',
+                                dataIndex: 'description',
+                                key: 'description',
+                                ellipsis: true,
+                              },
+                              {
+                                title: '排序',
+                                dataIndex: 'sort_order',
+                                key: 'sort_order',
+                                width: 80,
+                                render: (order) => <Text>{order}</Text>,
+                              },
+                              {
+                                title: '状态',
+                                dataIndex: 'enabled',
+                                key: 'enabled',
+                                width: 100,
+                                render: (enabled) => (
+                                  <Tag color={enabled ? 'green' : 'red'}>
+                                    {enabled ? '启用' : '禁用'}
+                                  </Tag>
+                                ),
+                              },
+                              {
+                                title: '操作',
+                                key: 'action',
+                                width: 180,
+                                fixed: 'right',
+                                render: (_, record) => (
+                                  <Space size={4} style={{ flexWrap: 'wrap' }}>
+                                    <Button
+                                      type="primary"
+                                      size="small"
+                                      icon={<EyeOutlined />}
+                                      onClick={() => getCategoryStats(record)}
+                                      title="查看统计"
+                                    />
+                                    <Button
+                                      size="small"
+                                      icon={<EditOutlined />}
+                                      onClick={() => showCategoryModal(record)}
+                                      title="编辑分类"
+                                    />
+                                    <Button
+                                      danger
+                                      size="small"
+                                      icon={<DeleteOutlined />}
+                                      onClick={() => handleDeleteCategory(record)}
+                                      title="删除分类"
+                                    />
+                                  </Space>
+                                ),
+                              },
+                            ]}
+                            dataSource={categories || []}
+                            rowKey="id"
+                            loading={categoryLoading}
+                            pagination={{
+                              total: (categories || []).length,
+                              pageSize: 10,
+                              showSizeChanger: true,
+                              showQuickJumper: true,
+                              showTotal: (total) => `共 ${total} 个分类`,
+                            }}
+                            scroll={{ x: 800 }}
+                          />
+                        </div>
+                      )}
+
+                      {/* 细分管理视图 */}
+                      {productSubView === 'variants' && (
+                        <div>
+                          <div style={{ marginBottom: 16 }}>
+                            <Text type="secondary">
+                              共 {(variantTypes || []).length} 个细分类型
+                            </Text>
+                          </div>
+
+                          {variantTypes.map(variantType => (
+                            <Card
+                              key={variantType.id}
+                              style={{ marginBottom: 16 }}
+                            >
+                              {/* 移动端优化的标题区域 */}
+                              <div style={{ marginBottom: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+                                  <span style={{ fontSize: '18px', marginRight: 8 }}>
+                                    {variantType.emoji || '⚙️'}
+                                  </span>
+                                  <Text strong style={{ fontSize: '16px' }}>
+                                    {variantType.display_name}
+                                  </Text>
+                                  {variantType.is_required && (
+                                    <Tag color="red" size="small" style={{ marginLeft: 8 }}>
+                                      必选
+                                    </Tag>
+                                  )}
+                                </div>
+                                
+                                {/* 响应式按钮组 */}
+                                <div style={{ 
+                                  display: 'flex', 
+                                  flexDirection: isMobile ? 'column' : 'row',
+                                  flexWrap: 'wrap', 
+                                  gap: 8
+                                }}>
+                                  <Button
+                                    size={isMobile ? 'middle' : 'small'}
+                                    icon={<PlusOutlined />}
+                                    onClick={() => showVariantOptionModal(variantType)}
+                                    style={{ 
+                                      minWidth: 'auto',
+                                      width: isMobile ? '100%' : 'auto'
+                                    }}
+                                  >
+                                    添加选项
+                                  </Button>
+                                  <Button
+                                    size={isMobile ? 'middle' : 'small'}
+                                    icon={<EditOutlined />}
+                                    onClick={() => showVariantTypeModal(variantType)}
+                                    style={{ 
+                                      minWidth: 'auto',
+                                      width: isMobile ? '100%' : 'auto'
+                                    }}
+                                  >
+                                    编辑
+                                  </Button>
+                                  <Button
+                                    size={isMobile ? 'middle' : 'small'}
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    onClick={() => handleDeleteVariantType(variantType)}
+                                    style={{ 
+                                      minWidth: 'auto',
+                                      width: isMobile ? '100%' : 'auto'
+                                    }}
+                                  >
+                                    删除
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* 描述 */}
+                              {variantType.description && (
+                                <div style={{ marginBottom: 16 }}>
+                                  <Text type="secondary">{variantType.description}</Text>
+                                </div>
+                              )}
+
+                              {/* 选项列表 */}
+                              <div>
+                                <Text strong>选项列表：</Text>
+                                <div style={{ marginTop: 8 }}>
+                                  {variantType.options && variantType.options.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                      {variantType.options.map(option => (
+                                        <div 
+                                          key={option.id} 
+                                          style={{ 
+                                            display: 'flex', 
+                                            flexDirection: isMobile ? 'column' : 'row',
+                                            justifyContent: isMobile ? 'flex-start' : 'space-between',
+                                            alignItems: isMobile ? 'stretch' : 'center',
+                                            padding: isMobile ? '12px 16px' : '8px 12px', 
+                                            border: '1px solid #f0f0f0', 
+                                            borderRadius: 6,
+                                            backgroundColor: '#fafafa'
+                                          }}
+                                        >
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ 
+                                              fontWeight: 500,
+                                              marginBottom: option.price_adjustment !== 0 ? 4 : 0
+                                            }}>
+                                              {option.display_name}
+                                            </div>
+                                            {option.price_adjustment !== 0 && (
+                                              <Text 
+                                                size="small" 
+                                                style={{ 
+                                                  color: option.price_adjustment > 0 ? '#f50' : '#52c41a',
+                                                  fontSize: '12px'
+                                                }}
+                                              >
+                                                {option.price_adjustment > 0 ? '+' : ''}¥{option.price_adjustment}
+                                              </Text>
+                                            )}
+                                          </div>
+                                          
+                                          <div style={{ 
+                                            display: 'flex', 
+                                            flexDirection: isMobile ? 'column' : 'row',
+                                            gap: isMobile ? 8 : 4, 
+                                            marginLeft: isMobile ? 0 : 8,
+                                            marginTop: isMobile ? 8 : 0
+                                          }}>
+                                            <Button
+                                              type="text"
+                                              size={isMobile ? 'small' : 'small'}
+                                              icon={<EditOutlined />}
+                                              onClick={() => showVariantOptionModal(variantType, option)}
+                                              style={{ 
+                                                padding: isMobile ? '8px 12px' : '4px 8px',
+                                                minWidth: isMobile ? 60 : 32,
+                                                height: isMobile ? 36 : 32,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                width: isMobile ? '100%' : 'auto'
+                                              }}
+                                              title="编辑选项"
+                                            >
+                                              {isMobile && '编辑'}
+                                            </Button>
+                                            <Button
+                                              type="text"
+                                              size={isMobile ? 'small' : 'small'}
+                                              danger
+                                              icon={<DeleteOutlined />}
+                                              onClick={() => handleDeleteVariantOption(option)}
+                                              style={{ 
+                                                padding: isMobile ? '8px 12px' : '4px 8px',
+                                                minWidth: isMobile ? 60 : 32,
+                                                height: isMobile ? 36 : 32,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                width: isMobile ? '100%' : 'auto'
+                                              }}
+                                              title="删除选项"
+                                            >
+                                              {isMobile && '删除'}
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div style={{ 
+                                      textAlign: 'center', 
+                                      padding: '20px',
+                                      backgroundColor: '#fafafa',
+                                      borderRadius: 6,
+                                      border: '1px dashed #d9d9d9'
+                                    }}>
+                                      <Text type="secondary">暂无选项，请先添加选项</Text>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          ))}
+
+                          {variantTypes.length === 0 && !variantTypeLoading && (
+                            <div style={{ 
+                              textAlign: 'center', 
+                              padding: '50px 20px',
+                              backgroundColor: '#fafafa',
+                              borderRadius: 8,
+                              border: '1px dashed #d9d9d9'
+                            }}>
+                              <Text type="secondary">暂无细分类型，请先添加细分类型</Text>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1652,7 +2242,6 @@ const AdminPage = () => {
                     <div>
                       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Title level={4} style={{ margin: 0 }}>
-                          <UserOutlined style={{ marginRight: 8 }} />
                           管理员管理
                         </Title>
                         <Space>
@@ -2041,10 +2630,11 @@ const AdminPage = () => {
                 rules={[{ required: true, message: '请选择分类' }]}
               >
                 <Select placeholder="请选择分类">
-                  <Select.Option value="coffee">咖啡</Select.Option>
-                  <Select.Option value="tea">茶饮</Select.Option>
-                  <Select.Option value="dessert">甜品</Select.Option>
-                  <Select.Option value="snack">小食</Select.Option>
+                  {categories.map(category => (
+                    <Select.Option key={category.id} value={category.name}>
+                      {category.display_name}
+                    </Select.Option>
+                  ))}
                 </Select>
               </Form.Item>
 
@@ -2895,6 +3485,55 @@ const AdminPage = () => {
               >
                 <Input.TextArea rows={3} placeholder="描述这个细分类型的用途" />
               </Form.Item>
+              
+              <Form.Item
+                label="类型图标"
+                name="emoji"
+                extra="点击按钮选择emoji图标"
+              >
+                <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.emoji !== currentValues.emoji}>
+                  {({ getFieldValue, setFieldsValue }) => {
+                    const currentEmoji = getFieldValue('emoji') || '';
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Button
+                          type="default"
+                          onClick={() => setEmojiPickerVisible(true)}
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            minWidth: 80,
+                            height: 40
+                          }}
+                        >
+                          <span style={{ fontSize: '20px', marginRight: 4 }}>
+                            {currentEmoji || '⚙️'}
+                          </span>
+                          选择
+                        </Button>
+                        <Input
+                          value={currentEmoji}
+                          placeholder="选择的emoji将显示在这里"
+                          readOnly
+                          style={{ flex: 1 }}
+                        />
+                        {currentEmoji && (
+                          <Button
+                            type="text"
+                            size="small"
+                            onClick={() => {
+                              setFieldsValue({ emoji: '' });
+                            }}
+                          >
+                            清除
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  }}
+                </Form.Item>
+              </Form.Item>
               <Form.Item
                 name="is_required"
                 valuePropName="checked"
@@ -3312,6 +3951,181 @@ const AdminPage = () => {
                   </Space>
                 </Form.Item>
               </Form>
+            </Modal>
+
+            {/* 分类管理模态框 */}
+            <Modal
+              title={editingCategory ? '编辑分类' : '添加分类'}
+              open={categoryModalVisible}
+              onCancel={() => {
+                setCategoryModalVisible(false);
+                categoryForm.resetFields();
+                setEditingCategory(null);
+              }}
+              footer={null}
+              width={600}
+            >
+              <Form
+                form={categoryForm}
+                layout="vertical"
+                onFinish={handleCategorySubmit}
+              >
+                <Form.Item
+                  label="分类名称"
+                  name="name"
+                  rules={[
+                    { required: true, message: '请输入分类名称' },
+                    { pattern: /^[a-zA-Z0-9_-]+$/, message: '分类名称只能包含字母、数字、下划线和连字符' },
+                    { min: 1, max: 50, message: '分类名称长度必须在1-50字符之间' }
+                  ]}
+                  extra="用于系统内部识别，只能包含字母、数字、下划线和连字符"
+                >
+                  <Input placeholder="如: coffee, tea, dessert" />
+                </Form.Item>
+
+                <Form.Item
+                  label="显示名称"
+                  name="display_name"
+                  rules={[
+                    { required: true, message: '请输入显示名称' },
+                    { min: 1, max: 100, message: '显示名称长度必须在1-100字符之间' }
+                  ]}
+                  extra="用户看到的分类名称，可以使用中文"
+                >
+                  <Input placeholder="如: 咖啡, 茶饮, 甜品" />
+                </Form.Item>
+
+                <Form.Item
+                  label="分类图标"
+                  name="emoji"
+                  extra="点击按钮选择emoji图标"
+                >
+                  <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.emoji !== currentValues.emoji}>
+                    {({ getFieldValue, setFieldsValue }) => {
+                      const currentEmoji = getFieldValue('emoji') || '';
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Button
+                            type="default"
+                            onClick={() => setEmojiPickerVisible(true)}
+                            style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              minWidth: 80,
+                              height: 40
+                            }}
+                          >
+                            <span style={{ fontSize: '20px', marginRight: 4 }}>
+                              {currentEmoji || '📦'}
+                            </span>
+                            选择
+                          </Button>
+                          <Input
+                            value={currentEmoji}
+                            placeholder="选择的emoji将显示在这里"
+                            readOnly
+                            style={{ flex: 1 }}
+                          />
+                          {currentEmoji && (
+                            <Button
+                              type="text"
+                              size="small"
+                              onClick={() => {
+                                setFieldsValue({ emoji: '' });
+                              }}
+                            >
+                              清除
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    }}
+                  </Form.Item>
+                </Form.Item>
+
+                <Form.Item
+                  label="描述"
+                  name="description"
+                  rules={[
+                    { max: 500, message: '描述长度不能超过500字符' }
+                  ]}
+                >
+                  <TextArea 
+                    rows={3} 
+                    placeholder="分类描述（可选）" 
+                    showCount 
+                    maxLength={500}
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  label="排序顺序"
+                  name="sort_order"
+                  extra="数值越小排序越靠前"
+                >
+                  <InputNumber 
+                    min={0} 
+                    max={999} 
+                    style={{ width: '100%' }}
+                    placeholder="0"
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  name="enabled"
+                  valuePropName="checked"
+                >
+                  <Checkbox>启用此分类</Checkbox>
+                </Form.Item>
+
+                <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+                  <Space>
+                    <Button onClick={() => {
+                      setCategoryModalVisible(false);
+                      categoryForm.resetFields();
+                      setEditingCategory(null);
+                    }}>
+                      取消
+                    </Button>
+                    <Button type="primary" htmlType="submit">
+                      {editingCategory ? '更新' : '创建'}
+                    </Button>
+                  </Space>
+                </Form.Item>
+              </Form>
+            </Modal>
+
+            {/* Emoji选择器模态框 - 复用于分类和细分类型 */}
+            <Modal
+              title="选择Emoji图标"
+              open={emojiPickerVisible}
+              onCancel={() => setEmojiPickerVisible(false)}
+              footer={null}
+              width={400}
+              centered
+            >
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <EmojiPicker
+                  onEmojiClick={(emojiData) => {
+                    // 判断当前是哪个表单在使用emoji选择器
+                    if (variantTypeModalVisible) {
+                      variantTypeForm.setFieldsValue({ emoji: emojiData.emoji });
+                    } else if (categoryModalVisible) {
+                      categoryForm.setFieldsValue({ emoji: emojiData.emoji });
+                    }
+                    setEmojiPickerVisible(false);
+                  }}
+                  width={350}
+                  height={400}
+                  searchDisabled={false}
+                  skinTonesDisabled={true}
+                  previewConfig={{
+                    defaultEmoji: '⚙️',
+                    defaultCaption: '选择一个emoji作为图标'
+                  }}
+                />
+              </div>
             </Modal>
           </div>
         </Content>

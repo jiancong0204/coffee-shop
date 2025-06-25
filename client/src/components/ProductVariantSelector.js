@@ -160,6 +160,9 @@ const ProductVariantSelector = ({
           <div key={variantType.id} style={{ marginBottom: 20 }}>
             <div style={{ marginBottom: 8 }}>
               <Text strong>
+                <span style={{ fontSize: '16px', marginRight: 6 }}>
+                  {variantType.emoji || '⚙️'}
+                </span>
                 {variantType.display_name}
                 {variantType.is_required && <Text style={{ color: '#f50' }}>*</Text>}
               </Text>
