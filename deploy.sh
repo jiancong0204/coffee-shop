@@ -43,7 +43,7 @@ cleanup() {
     docker-compose down --remove-orphans || true
     
     # 删除旧镜像
-    docker rmi coffee-shop_coffee-shop:latest || true
+    docker rmi coffee-shop:latest || true
     
     print_message $GREEN "✅ 清理完成"
 }
@@ -173,7 +173,7 @@ main() {
         "clean")
             print_message $YELLOW "🧹 清理所有数据..."
             docker-compose down -v --remove-orphans
-            docker rmi coffee-shop_coffee-shop:latest || true
+            docker rmi coffee-shop:latest || true
             ;;
         "update")
             print_message $YELLOW "🔄 更新部署 (保留数据)..."
