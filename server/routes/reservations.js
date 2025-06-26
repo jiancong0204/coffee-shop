@@ -30,6 +30,11 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ error: '预定数量必须在1-10之间' });
   }
 
+  // 验证备注长度
+  if (notes && notes.length > 100) {
+    return res.status(400).json({ error: '备注不能超过100字' });
+  }
+
   // 检查商品是否存在且库存为0
   db.get(
     'SELECT * FROM products WHERE id = ?',
@@ -256,7 +261,7 @@ router.put('/admin/:id/status', authenticateToken, (req, res) => {
   const reservation_id = req.params.id;
   const { status, notes } = req.body;
 
-  if (!['pending', 'confirmed', 'ready', 'completed', 'cancelled'].includes(status)) {
+  if (!['pending', 'confirmed', 'cancelled'].includes(status)) {
     return res.status(400).json({ error: '无效的状态' });
   }
 
@@ -289,39 +294,55 @@ router.put('/admin/:id/status', authenticateToken, (req, res) => {
           return new Promise((resolve, reject) => {
             const today = new Date().toISOString().split('T')[0];
             
+            // 使用更严格的查询，只考虑4位数的取单号
             const sql = `
               SELECT MAX(CAST(pickup_number AS INTEGER)) as max_pickup_number 
               FROM orders 
-              WHERE DATE(created_at) = ? AND pickup_number IS NOT NULL
+              WHERE DATE(created_at) = ? 
+              AND pickup_number IS NOT NULL 
+              AND LENGTH(pickup_number) = 4
+              AND pickup_number GLOB '[0-9][0-9][0-9][0-9]'
             `;
             
             db.get(sql, [today], (err, row) => {
               if (err) {
+                console.error('查询取单号失败:', err);
                 reject(err);
                 return;
               }
               
               const nextNumber = (row && row.max_pickup_number) ? row.max_pickup_number + 1 : 1;
-              const pickupNumber = nextNumber.toString().padStart(3, '0');
+              const pickupNumber = nextNumber.toString().padStart(4, '0');
+              console.log(`生成取单号: ${pickupNumber} (今天最大号码: ${row?.max_pickup_number || 0})`);
               resolve(pickupNumber);
             });
           });
         };
 
         // 创建订单
-        const createOrderFromReservation = async () => {
+        const createOrderFromReservation = async (retryCount = 0) => {
+          if (retryCount > 10) {
+            return res.status(500).json({ error: '生成取单号失败，请重试' });
+          }
+
           try {
             const pickupNumber = await generatePickupNumber();
 
             db.serialize(() => {
               db.run('BEGIN TRANSACTION');
 
-              // 创建订单
+              // 创建订单，将预定备注传递给订单
+              const orderNotes = reservation.notes || null;
               db.run(
-                'INSERT INTO orders (user_id, pickup_number, total_amount, status) VALUES (?, ?, ?, ?)',
-                [reservation.user_id, pickupNumber, reservation.total_amount, 'pending'],
+                'INSERT INTO orders (user_id, pickup_number, total_amount, status, notes) VALUES (?, ?, ?, ?, ?)',
+                [reservation.user_id, pickupNumber, reservation.total_amount, 'pending', orderNotes],
                 function(err) {
                   if (err) {
+                    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || err.code === 'SQLITE_CONSTRAINT') {
+                      // 取单号重复，重新生成
+                      db.run('ROLLBACK');
+                      return createOrderFromReservation(retryCount + 1);
+                    }
                     console.error('创建订单失败:', err);
                     db.run('ROLLBACK');
                     return res.status(500).json({ error: '创建订单失败' });
@@ -372,7 +393,8 @@ router.put('/admin/:id/status', authenticateToken, (req, res) => {
             });
           } catch (error) {
             console.error('生成取单号失败:', error);
-            return res.status(500).json({ error: '生成取单号失败' });
+            // 如果是生成取单号失败，也进行重试
+            return createOrderFromReservation(retryCount + 1);
           }
         };
 

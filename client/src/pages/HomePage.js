@@ -879,7 +879,7 @@ const HomePage = () => {
               fontSize: isMobile ? '14px' : '16px', 
               color: '#666' 
             }}>
-              选择您喜欢的饮品
+              选择您喜欢的商品
             </Text>
           </div>
 

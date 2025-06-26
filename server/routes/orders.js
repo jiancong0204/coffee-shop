@@ -20,7 +20,10 @@ router.post('/checkout', authenticateToken, (req, res) => {
       const sql = `
         SELECT MAX(CAST(pickup_number AS INTEGER)) as max_pickup_number 
         FROM orders 
-        WHERE DATE(created_at) = ? AND pickup_number IS NOT NULL
+        WHERE DATE(created_at) = ? 
+        AND pickup_number IS NOT NULL 
+        AND LENGTH(pickup_number) = 4
+        AND pickup_number GLOB '[0-9][0-9][0-9][0-9]'
       `;
       
       db.get(sql, [today], (err, row) => {
@@ -33,8 +36,8 @@ router.post('/checkout', authenticateToken, (req, res) => {
         // 如果今天还没有订单，从1开始；否则递增
         const nextNumber = (row && row.max_pickup_number) ? row.max_pickup_number + 1 : 1;
         
-        // 确保是3位数，不足3位前面补0
-        const pickupNumber = nextNumber.toString().padStart(3, '0');
+        // 确保是4位数，不足4位前面补0
+        const pickupNumber = nextNumber.toString().padStart(4, '0');
         
         resolve(pickupNumber);
       });

@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   coffee-shop:
     build: .
+    image: coffee-shop:latest
     container_name: coffee-shop-app
     restart: unless-stopped
     ports:

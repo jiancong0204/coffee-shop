@@ -141,6 +141,7 @@ const AdminPage = () => {
     }
     fetchProducts();
     fetchOrders();
+    fetchReservations(); // 初始化时就加载预定数据，用于显示角标
     fetchAdminList();
     fetchAllTags();
     fetchCategories(); // 确保分类数据在初始化时就加载
@@ -148,8 +149,6 @@ const AdminPage = () => {
     // 根据当前标签页加载对应数据
     if (activeTab === 'customers') {
       fetchCustomers();
-    } else if (activeTab === 'reservations') {
-      fetchReservations();
     }
   }, [isLoggedIn, isAdmin, navigate]);
 
@@ -589,6 +588,10 @@ const AdminPage = () => {
 
   const getUncompletedOrderCount = () => {
     return (orders || []).filter(order => order.status === 'pending' || order.status === 'preparing' || order.status === 'ready').length;
+  };
+
+  const getPendingReservationCount = () => {
+    return (reservations || []).filter(reservation => reservation.status === 'pending').length;
   };
 
   // 管理员管理相关函数
@@ -1498,9 +1501,7 @@ const AdminPage = () => {
   const getReservationStatusTag = (status) => {
     const statusConfig = {
       'pending': { color: 'orange', text: '待处理' },
-      'confirmed': { color: 'blue', text: '已确认' },
-      'ready': { color: 'green', text: '可取餐' },
-      'completed': { color: 'default', text: '已完成' },
+      'confirmed': { color: 'green', text: '已转订单' },
       'cancelled': { color: 'red', text: '已取消' }
     };
     
@@ -1840,6 +1841,7 @@ const AdminPage = () => {
                     <span>
                       <CalendarOutlined style={{ marginRight: 8 }} />
                       预定管理
+                      <Badge count={getPendingReservationCount()} style={{ marginLeft: 8 }} />
                     </span>
                   ),
                   children: (
@@ -1873,9 +1875,7 @@ const AdminPage = () => {
                             >
                               <Select.Option value="all">全部状态</Select.Option>
                               <Select.Option value="pending">待处理</Select.Option>
-                              <Select.Option value="confirmed">已确认</Select.Option>
-                              <Select.Option value="ready">可取餐</Select.Option>
-                              <Select.Option value="completed">已完成</Select.Option>
+                              <Select.Option value="confirmed">已转订单</Select.Option>
                               <Select.Option value="cancelled">已取消</Select.Option>
                             </Select>
                             <Input
@@ -1913,7 +1913,7 @@ const AdminPage = () => {
                           {
                             title: '商品信息',
                             key: 'product_info',
-                            width: 200,
+                            width: 240,
                             render: (_, record) => (
                               <div>
                                 <div style={{ fontWeight: 500 }}>{record.product_name}</div>
@@ -1921,6 +1921,21 @@ const AdminPage = () => {
                                   数量: {record.quantity} 份
                                 </div>
                                 {renderReservationVariantSelections(record.variant_selections)}
+                                {record.notes && (
+                                  <div style={{ marginTop: 8 }}>
+                                    <Button
+                                      size="small"
+                                      type="link"
+                                      style={{ padding: 0, height: 'auto', fontSize: '12px' }}
+                                      onClick={() => Modal.info({
+                                        title: '预定备注',
+                                        content: record.notes
+                                      })}
+                                    >
+                                      📝 查看备注
+                                    </Button>
+                                  </div>
+                                )}
                               </div>
                             ),
                           },
@@ -1982,7 +1997,7 @@ const AdminPage = () => {
                           {
                             title: '操作',
                             key: 'action',
-                            width: 240,
+                            width: 200,
                             render: (_, record) => (
                               <Space>
                                 {record.status === 'pending' && record.is_paid && (
@@ -2004,22 +2019,14 @@ const AdminPage = () => {
                                   </Button>
                                 )}
                                 {record.status === 'confirmed' && (
-                                  <Button
-                                    type="primary"
-                                    size="small"
-                                    onClick={() => handleReservationStatusChange(record.id, 'ready')}
-                                  >
-                                    完成制作
-                                  </Button>
-                                )}
-                                {record.status === 'ready' && (
-                                  <Button
-                                    type="primary"
-                                    size="small"
-                                    onClick={() => handleReservationStatusChange(record.id, 'completed')}
-                                  >
-                                    已取餐
-                                  </Button>
+                                  <div style={{ color: '#52c41a', fontSize: '12px' }}>
+                                    ✅ 已转为订单，请在订单管理中处理
+                                    {record.order_id && (
+                                      <div style={{ color: '#1890ff', marginTop: '2px' }}>
+                                        订单ID: #{record.order_id}
+                                      </div>
+                                    )}
+                                  </div>
                                 )}
                                 {record.status === 'pending' && (
                                   <Button
@@ -2030,17 +2037,7 @@ const AdminPage = () => {
                                     取消
                                   </Button>
                                 )}
-                                {record.notes && (
-                                  <Button
-                                    size="small"
-                                    onClick={() => Modal.info({
-                                      title: '预定备注',
-                                      content: record.notes
-                                    })}
-                                  >
-                                    备注
-                                  </Button>
-                                )}
+
                               </Space>
                             ),
                           },
@@ -4014,7 +4011,7 @@ const AdminPage = () => {
                   style={{ width: '100%' }}
                   precision={2}
                   formatter={(value) => `¥ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                  parser={(value) => value.replace(/¥\s?|(,*)/g, '')}
+                  parser={(value) => value.replace(/[¥\s,]/g, '')}
                 />
               </Form.Item>
               <Form.Item

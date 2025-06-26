@@ -348,7 +348,7 @@ const ReservationSelector = ({ visible, onCancel, onConfirm, product }) => {
               rows={3}
               placeholder="预定备注（可选）"
               showCount
-              maxLength={200}
+              maxLength={100}
             />
           </Form.Item>
         </Form>

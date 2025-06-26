@@ -119,7 +119,7 @@ function initDatabase() {
       CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
-        pickup_number VARCHAR(20) UNIQUE,
+        pickup_number VARCHAR(20),
         total_amount DECIMAL(10,2) NOT NULL,
         status VARCHAR(20) DEFAULT 'pending',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -444,6 +444,8 @@ function addOrderNotesColumnIfNotExists() {
   });
 }
 
+
+
 // 更新现有细分类型的emoji
 function updateExistingVariantTypesEmoji() {
   const emojiUpdates = [
@@ -679,7 +681,7 @@ function generatePickupNumbersForExistingOrders() {
           
           // 为该日期的订单按顺序分配取单号
           dateOrders.forEach(order => {
-            const pickupNumber = nextNumber.toString().padStart(3, '0');
+            const pickupNumber = nextNumber.toString().padStart(4, '0');
             db.run('UPDATE orders SET pickup_number = ? WHERE id = ?', [pickupNumber, order.id], (err) => {
               if (err) {
                 console.error('Error updating pickup number for order', order.id, ':', err);

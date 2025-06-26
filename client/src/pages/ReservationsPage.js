@@ -102,9 +102,7 @@ const ReservationsPage = () => {
   const getStatusTag = (status) => {
     const statusConfig = {
       'pending': { color: 'orange', text: '待处理' },
-      'confirmed': { color: 'blue', text: '已确认' },
-      'ready': { color: 'green', text: '可取餐' },
-      'completed': { color: 'default', text: '已完成' },
+      'confirmed': { color: 'green', text: '已转订单' },
       'cancelled': { color: 'red', text: '已取消' }
     };
     

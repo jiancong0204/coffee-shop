@@ -24,6 +24,7 @@ const CartPage = () => {
   const [orderNotes, setOrderNotes] = useState(''); // 订单备注
   const [selectedItems, setSelectedItems] = useState(new Set()); // 选中的商品
   const [confirmModalVisible, setConfirmModalVisible] = useState(false); // 订单确认模态框
+  const [hasLoadedFromStorage, setHasLoadedFromStorage] = useState(false); // 是否已从localStorage加载
   
   // 检测屏幕尺寸
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -59,23 +60,43 @@ const CartPage = () => {
     fetchCartData();
   }, [cartItems]);
 
-  // 初始化时全选所有商品，但只在首次加载时执行
+  // 从localStorage加载选择状态
   useEffect(() => {
-    if (cartItems.length > 0 && selectedItems.size === 0) {
-      // 只有在没有选中任何商品时才自动全选
-      setSelectedItems(new Set(cartItems.map(item => item.cart_id)));
-    } else if (cartItems.length > 0 && selectedItems.size > 0) {
+    if (cartItems.length > 0 && !hasLoadedFromStorage) {
+      try {
+        const savedSelectedItems = localStorage.getItem('cart_selected_items');
+        if (savedSelectedItems) {
+          const savedSet = new Set(JSON.parse(savedSelectedItems));
+          // 只保留仍然存在于购物车中的商品
+          const currentCartIds = new Set(cartItems.map(item => item.cart_id));
+          const validSelectedItems = new Set([...savedSet].filter(id => currentCartIds.has(id)));
+          setSelectedItems(validSelectedItems);
+        } else {
+          // 如果没有保存的状态，默认全选（仅首次）
+          setSelectedItems(new Set(cartItems.map(item => item.cart_id)));
+        }
+      } catch (error) {
+        console.error('加载购物车选择状态失败:', error);
+        // 如果加载失败，默认全选
+        setSelectedItems(new Set(cartItems.map(item => item.cart_id)));
+      }
+      setHasLoadedFromStorage(true);
+    } else if (cartItems.length > 0 && hasLoadedFromStorage) {
       // 如果购物车更新了，需要清理不存在的商品ID
       const currentCartIds = new Set(cartItems.map(item => item.cart_id));
       const validSelectedItems = new Set([...selectedItems].filter(id => currentCartIds.has(id)));
       if (validSelectedItems.size !== selectedItems.size) {
         setSelectedItems(validSelectedItems);
+        // 保存更新后的选择状态
+        localStorage.setItem('cart_selected_items', JSON.stringify([...validSelectedItems]));
       }
     } else if (cartItems.length === 0) {
       // 如果购物车为空，清空选择状态
       setSelectedItems(new Set());
+      localStorage.removeItem('cart_selected_items');
+      setHasLoadedFromStorage(false);
     }
-  }, [cartItems]);
+  }, [cartItems, hasLoadedFromStorage, selectedItems]);
 
   const fetchCartData = async () => {
     try {
@@ -115,15 +136,16 @@ const CartPage = () => {
       newSelected.delete(cartId);
     }
     setSelectedItems(newSelected);
+    // 保存到localStorage
+    localStorage.setItem('cart_selected_items', JSON.stringify([...newSelected]));
   };
 
   // 全选/取消全选
   const handleSelectAll = (checked) => {
-    if (checked) {
-      setSelectedItems(new Set(cartItems.map(item => item.cart_id)));
-    } else {
-      setSelectedItems(new Set());
-    }
+    const newSelected = checked ? new Set(cartItems.map(item => item.cart_id)) : new Set();
+    setSelectedItems(newSelected);
+    // 保存到localStorage
+    localStorage.setItem('cart_selected_items', JSON.stringify([...newSelected]));
   };
 
   // 获取选中的商品
@@ -161,6 +183,12 @@ const CartPage = () => {
       setOrderSuccess(true);
       setOrderNotes(''); // 清空备注
       setConfirmModalVisible(false); // 关闭确认模态框
+      
+      // 清理已结账商品的选择状态
+      const remainingSelected = new Set([...selectedItems].filter(id => !selectedCartIds.includes(id)));
+      setSelectedItems(remainingSelected);
+      localStorage.setItem('cart_selected_items', JSON.stringify([...remainingSelected]));
+      
       fetchCart(); // 刷新购物车上下文
       fetchCartData(); // 刷新本地购物车数据
     } catch (error) {
