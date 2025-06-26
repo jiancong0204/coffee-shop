@@ -158,6 +158,11 @@ const CartPage = () => {
     return getSelectedCartItems().reduce((total, item) => total + item.total_price, 0);
   };
 
+  // 计算选中商品的总数量（所有规格数量的总和）
+  const getSelectedTotalQuantity = () => {
+    return getSelectedCartItems().reduce((total, item) => total + item.quantity, 0);
+  };
+
   // 显示订单确认模态框
   const showConfirmModal = () => {
     const selectedCartItems = getSelectedCartItems();
@@ -551,7 +556,7 @@ const CartPage = () => {
                       height: isMobile ? '44px' : 'auto'
                     }}
                   >
-                    结账 ({selectedItems.size})
+                    结账 ({getSelectedTotalQuantity()})
                   </Button>
                 </div>
               </div>

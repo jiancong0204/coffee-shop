@@ -84,7 +84,7 @@ const Header = () => {
         onClick={() => navigate('/')}
         style={{ cursor: 'pointer' }}
       >
-        ☕ 1403
+        🏪 1403
       </div>
 
       <div style={{ 

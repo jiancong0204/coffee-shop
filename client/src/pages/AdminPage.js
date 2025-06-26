@@ -225,6 +225,7 @@ const AdminPage = () => {
             ...product,
             available: Boolean(product.available),
             unlimited_supply: Boolean(product.unlimited_supply),
+            reservation_enabled: Boolean(product.reservation_enabled !== false), // 默认为true
             tagIds: tagIds
           };
           form.setFieldsValue(formData);
@@ -234,7 +235,8 @@ const AdminPage = () => {
           const formData = {
             ...product,
             available: Boolean(product.available),
-            unlimited_supply: Boolean(product.unlimited_supply)
+            unlimited_supply: Boolean(product.unlimited_supply),
+            reservation_enabled: Boolean(product.reservation_enabled !== false) // 默认为true
           };
           form.setFieldsValue(formData);
         });
@@ -246,7 +248,8 @@ const AdminPage = () => {
         form.setFieldsValue({
           unlimited_supply: false,
           available_num: 100,
-          available: true
+          available: true,
+          reservation_enabled: true
         });
         setImagePreview('');
       }
@@ -411,6 +414,17 @@ const AdminPage = () => {
           </Tag>
         );
       }
+    },
+    {
+      title: '预定设置',
+      dataIndex: 'reservation_enabled',
+      key: 'reservation_enabled',
+      width: 100,
+      render: (reservationEnabled) => (
+        <Tag color={reservationEnabled !== false ? 'green' : 'red'}>
+          {reservationEnabled !== false ? '允许预定' : '不允许预定'}
+        </Tag>
+      )
     },
     {
       title: '标签',
@@ -3111,6 +3125,18 @@ const AdminPage = () => {
                 }}>
                   <Select.Option value={false}>限量供应</Select.Option>
                   <Select.Option value={true}>不限量供应</Select.Option>
+                </Select>
+              </Form.Item>
+
+              <Form.Item
+                name="reservation_enabled"
+                label="预定设置"
+                initialValue={true}
+                extra="开启后，商品售罄时顾客可以提交预定订单；关闭后，售罄时直接显示已售罄"
+              >
+                <Select>
+                  <Select.Option value={true}>允许预定</Select.Option>
+                  <Select.Option value={false}>不允许预定</Select.Option>
                 </Select>
               </Form.Item>
 

@@ -53,6 +53,10 @@ router.post('/', authenticateToken, (req, res) => {
         return res.status(400).json({ error: '商品已下架，无法预定' });
       }
 
+      if (!product.reservation_enabled) {
+        return res.status(400).json({ error: '该商品不支持预定' });
+      }
+
       if (product.unlimited_supply || product.available_num > 0) {
         return res.status(400).json({ error: '商品有库存，无需预定' });
       }

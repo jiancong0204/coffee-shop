@@ -85,6 +85,7 @@ function initDatabase() {
         available BOOLEAN DEFAULT true,
         available_num INTEGER DEFAULT 100,
         unlimited_supply BOOLEAN DEFAULT false,
+        reservation_enabled BOOLEAN DEFAULT true,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `, (err) => {
@@ -92,6 +93,8 @@ function initDatabase() {
         console.error('Error creating products table:', err);
       } else {
         console.log('Products table created successfully');
+        // 为现有商品表添加预定控制字段
+        addReservationEnabledColumnIfNotExists();
       }
     });
 
@@ -363,7 +366,7 @@ function addEmojiColumnIfNotExists() {
 // 更新现有分类的emoji
 function updateExistingCategoriesEmoji() {
   const emojiUpdates = [
-    { name: 'coffee', emoji: '☕' },
+    { name: 'coffee', emoji: '🥤' },
     { name: 'tea', emoji: '🍵' },
     { name: 'dessert', emoji: '🧁' },
     { name: 'snack', emoji: '🍪' }
@@ -444,6 +447,17 @@ function addOrderNotesColumnIfNotExists() {
   });
 }
 
+// 为现有商品表添加预定控制字段
+function addReservationEnabledColumnIfNotExists() {
+  db.run("ALTER TABLE products ADD COLUMN reservation_enabled BOOLEAN DEFAULT true", (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('Error adding reservation_enabled to products table:', err);
+    } else if (!err || !err.message?.includes('duplicate column')) {
+      console.log('Added reservation_enabled column to products table');
+    }
+  });
+}
+
 
 
 // 更新现有细分类型的emoji
@@ -494,7 +508,7 @@ function createDefaultAdmin() {
 // 添加默认分类
 function addDefaultCategories() {
   const defaultCategories = [
-    { name: 'coffee', display_name: '咖啡', description: '各种口味的咖啡饮品', emoji: '☕', sort_order: 1 },
+    { name: 'coffee', display_name: '咖啡', description: '各种口味的咖啡饮品', emoji: '🥤', sort_order: 1 },
     { name: 'tea', display_name: '茶饮', description: '传统茶饮和奶茶系列', emoji: '🍵', sort_order: 2 },
     { name: 'dessert', display_name: '甜品', description: '精美的蛋糕和甜点', emoji: '🧁', sort_order: 3 },
     { name: 'snack', display_name: '小食', description: '各种小食和轻食', emoji: '🍪', sort_order: 4 }

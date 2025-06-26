@@ -195,36 +195,55 @@ function ProductList({ products, isAdmin, isLoggedIn, navigate }) {
 
     // 如果商品缺货
     if (isOutOfStock) {
-      return (
-        <Tooltip 
-          title={
-            <div>
-              <div>📅 预定规则：</div>
-              <div>• 预定日期：明天至未来3天</div>
-              <div>• 预定数量：1-10份</div>
-              <div>• 需要立即支付</div>
-              <div>• 管理员确认后转为订单</div>
-            </div>
-          }
-          placement={isMobile ? 'top' : 'topRight'}
-        >
+      // 检查是否允许预定
+      if (product.reservation_enabled !== false) {
+        return (
+          <Tooltip 
+            title={
+              <div>
+                <div>📅 预定规则：</div>
+                <div>• 预定日期：明天至未来3天</div>
+                <div>• 预定数量：1-10份</div>
+                <div>• 需要立即支付</div>
+                <div>• 管理员确认后转为订单</div>
+              </div>
+            }
+            placement={isMobile ? 'top' : 'topRight'}
+          >
+            <Button
+              icon={<CalendarOutlined />}
+              onClick={() => showReservationSelector(product)}
+              disabled={!product.available || isLoading}
+              loading={isLoading}
+              className="cart-button"
+              size={isMobile ? 'small' : 'default'}
+              style={{ 
+                color: '#1890ff', 
+                borderColor: '#1890ff',
+                backgroundColor: '#f0f8ff'
+              }}
+            >
+              {isMobile ? '预定' : '预定商品'}
+            </Button>
+          </Tooltip>
+        );
+      } else {
+        // 不允许预定，显示已售罄
+        return (
           <Button
-            icon={<CalendarOutlined />}
-            onClick={() => showReservationSelector(product)}
-            disabled={!product.available || isLoading}
-            loading={isLoading}
+            disabled
             className="cart-button"
             size={isMobile ? 'small' : 'default'}
             style={{ 
-              color: '#1890ff', 
-              borderColor: '#1890ff',
-              backgroundColor: '#f0f8ff'
+              color: '#999',
+              borderColor: '#d9d9d9',
+              backgroundColor: '#f5f5f5'
             }}
           >
-            {isMobile ? '预定' : '预定商品'}
+            已售罄
           </Button>
-        </Tooltip>
-      );
+        );
+      }
     }
 
     if (quantity === 0) {
@@ -626,7 +645,7 @@ function GroupedProductList({ groupedProducts, categoryMap, categoryData, isAdmi
     } else {
       // 否则使用硬编码的映射作为后备
       const emojiMap = {
-        'coffee': '☕',
+        'coffee': '🥤',
         'tea': '🍵', 
         'dessert': '🧁',
         'snack': '🍪'
@@ -800,7 +819,7 @@ const HomePage = () => {
     } else {
       // 否则使用硬编码的映射作为后备
       const emojiMap = {
-        'coffee': '☕',
+        'coffee': '🥤',
         'tea': '🍵', 
         'dessert': '🧁',
         'snack': '🍪'
@@ -826,7 +845,7 @@ const HomePage = () => {
             maxWidth: '500px',
             margin: '0 auto'
           }}>
-            <div style={{ fontSize: isMobile ? '48px' : '64px', marginBottom: isMobile ? 16 : 24 }}>☕</div>
+                          <div style={{ fontSize: isMobile ? '48px' : '64px', marginBottom: isMobile ? 16 : 24 }}>🏪</div>
             <Title level={1} style={{ 
               color: '#8B4513', 
               marginBottom: isMobile ? 12 : 16,
@@ -873,7 +892,7 @@ const HomePage = () => {
               marginBottom: isMobile ? 4 : 8,
               fontSize: isMobile ? '20px' : '28px'
             }}>
-              ☕ 菜单
+              🛍️ 菜单
             </Title>
             <Text style={{ 
               fontSize: isMobile ? '14px' : '16px', 
