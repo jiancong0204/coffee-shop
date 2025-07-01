@@ -89,7 +89,7 @@ check_health() {
     local attempt=1
     
     while [ $attempt -le $max_attempts ]; do
-        if curl -f http://localhost/api/health &> /dev/null; then
+        if curl -f http://localhost:8080/api/health &> /dev/null; then
             print_message $GREEN "✅ 应用健康检查通过"
             break
         fi
@@ -112,8 +112,8 @@ show_info() {
 🎉 咖啡点单系统部署完成！
 
 📊 访问信息:
-   🌐 应用地址: http://localhost
-   📊 健康检查: http://localhost/api/health
+   🌐 应用地址: http://localhost:8080
+   📊 健康检查: http://localhost:8080/api/health
    👤 默认管理员: admin
 
 🔧 管理命令:
